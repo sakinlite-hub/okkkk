@@ -664,6 +664,29 @@ style.textContent = `
 document.head.appendChild(style);
 
 // Chat Functions
+// Helper function to load users data without UI updates
+async function loadUsersData() {
+    if (!currentUser) return [];
+    
+    try {
+        const { data: users, error } = await supabaseClient
+            .from('user_profiles')
+            .select('*')
+            .neq('id', currentUser.id)
+            .order('username');
+            
+        if (error) {
+            console.error('Failed to load users data:', error);
+            return [];
+        }
+        
+        return users || [];
+    } catch (error) {
+        console.error('Error loading users data:', error);
+        return [];
+    }
+}
+
 async function loadUsers() {
     try {
         const { data: users, error } = await supabaseClient
@@ -851,65 +874,100 @@ async function loadMessages(partnerId) {
         // Clear unread count for this user
         unreadMessageCounts.set(partnerId, 0);
         
-        const { data: messages, error } = await supabaseClient
-            .from('messages')
-            .select('*')
-            .or(`and(sender_id.eq.${currentUser.id},receiver_id.eq.${partnerId}),and(sender_id.eq.${partnerId},receiver_id.eq.${currentUser.id})`)
-            .order('timestamp', { ascending: true });
-            
-        if (error) throw error;
+        // First, get offline messages to ensure we always have something to show
+        const offlineMessages = getOfflineMessages().filter(msg => 
+            (msg.sender_id === currentUser.id && msg.receiver_id === partnerId) ||
+            (msg.sender_id === partnerId && msg.receiver_id === currentUser.id)
+        );
         
-        // Cache all messages
-        if (messages) {
-            messages.forEach(msg => {
-                messageCache.set(msg.id, msg);
-            });
-            
-            // Store offline copy with merge
-            storeMessagesOffline(messages);
+        console.log('Found offline messages:', offlineMessages.length);
+        
+        // Try to get server messages
+        let serverMessages = [];
+        let serverError = null;
+        
+        try {
+            const { data: messages, error } = await supabaseClient
+                .from('messages')
+                .select('*')
+                .or(`and(sender_id.eq.${currentUser.id},receiver_id.eq.${partnerId}),and(sender_id.eq.${partnerId},receiver_id.eq.${currentUser.id})`)
+                .order('timestamp', { ascending: true });
+                
+            if (error) throw error;
+            serverMessages = messages || [];
+            console.log('Found server messages:', serverMessages.length);
+        } catch (err) {
+            console.warn('Failed to load server messages:', err);
+            serverError = err;
         }
         
-        displayMessages(messages || []);
+        // Merge offline and server messages - prioritize ALL messages
+        const messageMap = new Map();
         
-        // Update last message check time to prevent duplicates in polling
-        if (messages && messages.length > 0) {
-            lastMessageCheck = messages[messages.length - 1].timestamp;
+        // Add offline messages first (ensures they're never lost)
+        offlineMessages.forEach(msg => {
+            if (msg && msg.id) {
+                messageMap.set(msg.id, msg);
+            }
+        });
+        
+        // Add server messages (may overwrite offline with updated versions)
+        serverMessages.forEach(msg => {
+            if (msg && msg.id) {
+                messageMap.set(msg.id, msg);
+            }
+        });
+        
+        // Get final merged list
+        const allMessages = Array.from(messageMap.values())
+            .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+            
+        console.log('Total merged messages:', allMessages.length);
+        
+        // Cache ALL messages
+        allMessages.forEach(msg => {
+            messageCache.set(msg.id, msg);
+        });
+        
+        // Update offline storage with merged messages
+        if (allMessages.length > 0) {
+            storeMessagesOffline(allMessages);
+        }
+        
+        // Always display messages, even if some are only offline
+        displayMessages(allMessages);
+        
+        // Update last message check time
+        if (allMessages.length > 0) {
+            lastMessageCheck = allMessages[allMessages.length - 1].timestamp;
         } else {
             lastMessageCheck = new Date().toISOString();
         }
         
-    } catch (error) {
-        console.error('Load messages error:', error);
+        // Show warning if we couldn't reach server but have offline messages
+        if (serverError && offlineMessages.length > 0) {
+            showError('Showing cached messages. Some messages may not be current.', null, {
+                type: 'warning',
+                duration: 5000
+            });
+        }
         
-        // Try to show cached messages if available
+    } catch (error) {
+        console.error('Critical load messages error:', error);
+        
+        // Last resort: try cached messages
         const cachedMessages = Array.from(messageCache.values()).filter(msg => 
             (msg.sender_id === currentUser.id && msg.receiver_id === partnerId) ||
             (msg.sender_id === partnerId && msg.receiver_id === currentUser.id)
         ).sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
         
         if (cachedMessages.length > 0) {
-            console.log('Showing cached messages:', cachedMessages.length);
+            console.log('Using cached messages as last resort:', cachedMessages.length);
             displayMessages(cachedMessages);
         } else {
-            // Try offline messages
-            const offlineMessages = getOfflineMessages().filter(msg => 
-                (msg.sender_id === currentUser.id && msg.receiver_id === partnerId) ||
-                (msg.sender_id === partnerId && msg.receiver_id === currentUser.id)
-            ).sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
-            
-            if (offlineMessages.length > 0) {
-                console.log('Showing offline messages:', offlineMessages.length);
-                displayMessages(offlineMessages);
-                
-                // Cache offline messages
-                offlineMessages.forEach(msg => {
-                    messageCache.set(msg.id, msg);
-                });
-            } else {
-                // Show error but don't break the app
-                showError('Could not load messages. Check your connection.');
-                displayMessages([]);
-            }
+            console.log('No messages available - showing empty state');
+            displayMessages([]);
+            showError('Could not load messages. Please check your connection and try again.');
         }
     }
 }
@@ -1588,12 +1646,13 @@ function setupRealtimeSubscriptions() {
     }, 1000); // 1 second delay for mobile browsers
 }
 
-// Mobile polling fallback for when real-time fails
+// Enhanced mobile polling fallback for when real-time fails
 let mobilePollingInterval = null;
 let lastMessageCheck = new Date().toISOString();
 let lastPollingCheck = new Date().toISOString();
 let pollingRetryCount = 0;
-let maxPollingRetries = 3;
+let maxPollingRetries = 5; // Increased for better reliability
+let backgroundPollingInterval = null; // For background sync when app is closed
 
 function setupMobilePollingFallback() {
     // Clear existing interval
@@ -1607,11 +1666,26 @@ function setupMobilePollingFallback() {
         return;
     }
     
-    console.log('Setting up mobile polling fallback for:', currentChatPartner.username);
+    console.log('Setting up enhanced mobile polling fallback for:', currentChatPartner.username);
     
     // Reset polling check time and retry count
     lastPollingCheck = new Date().toISOString();
     pollingRetryCount = 0;
+    
+    // Store polling state for recovery
+    const pollingState = {
+        chatPartnerId: currentChatPartner.id,
+        chatPartnerUsername: currentChatPartner.username,
+        lastPollingCheck: lastPollingCheck,
+        userId: currentUser.id,
+        setupTime: new Date().toISOString()
+    };
+    
+    try {
+        localStorage.setItem('mobile_polling_state', JSON.stringify(pollingState));
+    } catch (error) {
+        console.warn('Failed to save polling state:', error);
+    }
     
     mobilePollingInterval = setInterval(async () => {
         try {
@@ -1622,22 +1696,29 @@ function setupMobilePollingFallback() {
                 return;
             }
             
-            // Check for new messages since last check
-            const { data: newMessages, error } = await supabaseClient
+            // More aggressive message checking - get ALL recent messages
+            const { data: recentMessages, error } = await supabaseClient
                 .from('messages')
                 .select('*')
                 .or(`and(sender_id.eq.${currentUser.id},receiver_id.eq.${currentChatPartner.id}),and(sender_id.eq.${currentChatPartner.id},receiver_id.eq.${currentUser.id})`)
-                .gt('timestamp', lastPollingCheck)
+                .gte('timestamp', new Date(Date.now() - 10 * 60 * 1000).toISOString()) // Last 10 minutes
                 .order('timestamp', { ascending: true });
                 
             if (error) {
-                console.error('Mobile polling error:', error);
+                console.error('Enhanced mobile polling error:', error);
                 pollingRetryCount++;
                 
                 if (pollingRetryCount >= maxPollingRetries) {
-                    console.error('Max polling retries reached, stopping mobile polling');
-                    stopMobilePolling();
-                    updateConnectionStatus('disconnected');
+                    console.error('Max polling retries reached, will retry with backoff');
+                    // Don't stop completely, just increase interval
+                    clearInterval(mobilePollingInterval);
+                    setTimeout(() => {
+                        if (currentChatPartner) {
+                            console.log('Retrying mobile polling with backoff');
+                            pollingRetryCount = 0;
+                            setupMobilePollingFallback();
+                        }
+                    }, 30000); // 30 second backoff
                 }
                 return;
             }
@@ -1645,21 +1726,33 @@ function setupMobilePollingFallback() {
             // Reset retry count on success
             pollingRetryCount = 0;
             
-            if (newMessages && newMessages.length > 0) {
-                console.log('Found new messages via mobile polling:', newMessages.length);
-                
+            if (recentMessages && recentMessages.length > 0) {
                 const chatMessages = document.getElementById('chat-messages');
+                let foundNewMessages = false;
+                
                 if (chatMessages) {
-                    let addedNewMessages = false;
+                    // Get current UI messages
+                    const currentUIMessageIds = new Set();
+                    const messageElements = chatMessages.querySelectorAll('[data-message-id]');
+                    messageElements.forEach(el => {
+                        const messageId = el.getAttribute('data-message-id');
+                        if (messageId && !messageId.startsWith('temp-')) {
+                            currentUIMessageIds.add(messageId);
+                        }
+                    });
                     
-                    newMessages.forEach(message => {
-                        // Check if message already exists to prevent duplicates
-                        const existingMessage = chatMessages.querySelector(`[data-message-id="${message.id}"]`);
-                        if (!existingMessage) {
+                    // Find messages not in UI
+                    const newMessages = recentMessages.filter(msg => !currentUIMessageIds.has(msg.id.toString()));
+                    
+                    if (newMessages.length > 0) {
+                        console.log('Found', newMessages.length, 'new messages via enhanced mobile polling');
+                        foundNewMessages = true;
+                        
+                        newMessages.forEach(message => {
                             // Cache the message
                             messageCache.set(message.id, message);
                             
-                            // Store offline
+                            // Store offline immediately
                             storeMessageOffline(message);
                             
                             // Remove welcome message if it exists
@@ -1668,41 +1761,60 @@ function setupMobilePollingFallback() {
                                 welcomeMsg.remove();
                             }
                             
-                            // Add message to UI
+                            // Add message to UI with enhanced animation
                             const messageElement = createMessageElement(message);
                             messageElement.setAttribute('data-message-id', message.id);
                             
-                            // Add long press listener for mobile
-                            addLongPressListener(messageElement, message.id);
+                            // Add with slide-in animation
+                            messageElement.style.opacity = '0';
+                            messageElement.style.transform = 'translateX(20px)';
+                            messageElement.style.transition = 'all 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94)';
                             
                             chatMessages.appendChild(messageElement);
-                            addedNewMessages = true;
+                            
+                            // Trigger animation
+                            setTimeout(() => {
+                                messageElement.style.opacity = '1';
+                                messageElement.style.transform = 'translateX(0)';
+                            }, 50);
+                            
+                            // Add long press listener for mobile
+                            addLongPressListener(messageElement, message.id);
                             
                             // Mark as read if it's for current user
                             if (message.receiver_id === currentUser.id) {
                                 markMessageAsRead(message.id);
                             }
-                        }
-                    });
-                    
-                    // Only scroll and reflow if we added new messages
-                    if (addedNewMessages) {
-                        // Scroll to bottom with smooth animation
+                        });
+                        
+                        // Enhanced scrolling with smooth animation
                         setTimeout(() => {
-                            chatMessages.scrollTop = chatMessages.scrollHeight;
-                            chatMessages.offsetHeight; // Force reflow
-                        }, 100);
+                            chatMessages.scrollTo({
+                                top: chatMessages.scrollHeight,
+                                behavior: 'smooth'
+                            });
+                            
+                            // Force reflow
+                            chatMessages.offsetHeight;
+                        }, 150);
                         
                         // Update unread counts
                         updateUnreadCounts();
                     }
+                    
+                    // Always update polling check time to most recent message or current time
+                    const latestMessage = recentMessages[recentMessages.length - 1];
+                    if (latestMessage && latestMessage.timestamp) {
+                        lastPollingCheck = latestMessage.timestamp;
+                    } else {
+                        lastPollingCheck = new Date().toISOString();
+                    }
+                } else {
+                    console.warn('Chat messages container not found during polling');
                 }
                 
-                // Update last check time to the latest message timestamp
-                const latestMessage = newMessages[newMessages.length - 1];
-                if (latestMessage && latestMessage.timestamp) {
-                    lastPollingCheck = latestMessage.timestamp;
-                }
+                // Update stored offline messages with ALL recent messages
+                storeMessagesOffline(recentMessages);
             } else {
                 // No new messages, just update timestamp
                 lastPollingCheck = new Date().toISOString();
@@ -1711,25 +1823,59 @@ function setupMobilePollingFallback() {
             // Update connection status
             updateConnectionStatus('connected');
             
+            // Update polling state
+            try {
+                const updatedPollingState = {
+                    chatPartnerId: currentChatPartner.id,
+                    chatPartnerUsername: currentChatPartner.username,
+                    lastPollingCheck: lastPollingCheck,
+                    userId: currentUser.id,
+                    lastSuccessfulPoll: new Date().toISOString()
+                };
+                localStorage.setItem('mobile_polling_state', JSON.stringify(updatedPollingState));
+            } catch (error) {
+                console.warn('Failed to update polling state:', error);
+            }
+            
         } catch (error) {
             console.error('Mobile polling critical error:', error);
             pollingRetryCount++;
             
             if (pollingRetryCount >= maxPollingRetries) {
-                console.error('Too many polling errors, stopping mobile polling');
-                stopMobilePolling();
+                console.error('Too many polling errors, will retry with exponential backoff');
+                clearInterval(mobilePollingInterval);
+                
+                // Exponential backoff retry
+                const backoffTime = Math.min(60000, 5000 * Math.pow(2, pollingRetryCount - maxPollingRetries));
+                setTimeout(() => {
+                    if (currentChatPartner) {
+                        console.log('Retrying mobile polling after', backoffTime / 1000, 'seconds');
+                        pollingRetryCount = 0;
+                        setupMobilePollingFallback();
+                    }
+                }, backoffTime);
+                
                 updateConnectionStatus('disconnected');
                 
-                // Show user-friendly error
+                // Show user-friendly error with retry option
                 showError('Connection issues detected. Messages may be delayed.', null, {
                     type: 'warning',
-                    duration: 5000,
+                    duration: 8000,
                     actions: [
                         {
-                            text: 'Retry',
+                            text: 'Retry Now',
                             handler: () => {
                                 if (currentChatPartner) {
+                                    pollingRetryCount = 0;
                                     setupMobilePollingFallback();
+                                }
+                            }
+                        },
+                        {
+                            text: 'Reload Messages',
+                            handler: () => {
+                                if (currentChatPartner) {
+                                    loadMessages(currentChatPartner.id);
                                 }
                             }
                         }
@@ -1737,15 +1883,29 @@ function setupMobilePollingFallback() {
                 });
             }
         }
-    }, 2000); // Check every 2 seconds for better mobile experience
+    }, 1500); // Faster polling interval: 1.5 seconds for better mobile experience
     
-    console.log('Mobile polling started successfully');
+    console.log('Enhanced mobile polling started successfully with 1.5s interval');
 }
 
 function stopMobilePolling() {
     if (mobilePollingInterval) {
         clearInterval(mobilePollingInterval);
         mobilePollingInterval = null;
+        console.log('Mobile polling stopped');
+    }
+    
+    if (backgroundPollingInterval) {
+        clearInterval(backgroundPollingInterval);
+        backgroundPollingInterval = null;
+        console.log('Background polling stopped');
+    }
+    
+    // Clear polling state
+    try {
+        localStorage.removeItem('mobile_polling_state');
+    } catch (error) {
+        console.warn('Failed to clear polling state:', error);
     }
 }
 
@@ -1912,16 +2072,352 @@ function clearCachedData() {
 let lastPresenceUpdate = 0;
 const PRESENCE_UPDATE_COOLDOWN = 5000; // 5 seconds
 let connectionCheckInterval = null;
+let wasAppHidden = false;
+let lastSyncTime = new Date().toISOString();
 
-document.addEventListener('visibilitychange', () => {
+// Enhanced mobile app lifecycle handling with comprehensive message sync
+document.addEventListener('visibilitychange', async () => {
+    console.log('Visibility changed:', document.hidden ? 'hidden' : 'visible');
+    
     if (currentUser) {
         const now = Date.now();
-        if (now - lastPresenceUpdate > PRESENCE_UPDATE_COOLDOWN) {
-            updateUserPresence(!document.hidden);
-            lastPresenceUpdate = now;
+        
+        if (document.hidden) {
+            // App going to background - critical mobile sync point
+            wasAppHidden = true;
+            lastSyncTime = new Date().toISOString();
+            
+            // Store current app state for recovery
+            const appState = {
+                currentChatPartnerId: currentChatPartner?.id || null,
+                currentChatPartnerUsername: currentChatPartner?.username || null,
+                lastSyncTime: lastSyncTime,
+                lastMessageCheck: lastMessageCheck,
+                backgroundTimestamp: now
+            };
+            
+            try {
+                localStorage.setItem('app_state_backup', JSON.stringify(appState));
+                localStorage.setItem('app_last_active', lastSyncTime);
+                
+                // Force save current messages before going to background
+                if (currentChatPartner) {
+                    const currentMessages = Array.from(messageCache.values()).filter(msg => 
+                        (msg.sender_id === currentUser.id && msg.receiver_id === currentChatPartner.id) ||
+                        (msg.sender_id === currentChatPartner.id && msg.receiver_id === currentUser.id)
+                    );
+                    
+                    if (currentMessages.length > 0) {
+                        storeMessagesOffline(currentMessages);
+                        console.log('Force-saved', currentMessages.length, 'messages before background');
+                    }
+                }
+                
+                console.log('App state saved before going to background');
+            } catch (error) {
+                console.error('Failed to save app state:', error);
+            }
+            
+            // Update presence with throttling
+            if (now - lastPresenceUpdate > PRESENCE_UPDATE_COOLDOWN) {
+                updateUserPresence(false);
+                lastPresenceUpdate = now;
+            }
+            
+        } else {
+            // App coming back to foreground - critical mobile recovery point
+            if (wasAppHidden) {
+                console.log('App returned from background, performing comprehensive sync...');
+                
+                try {
+                    // Restore app state if available
+                    const savedState = localStorage.getItem('app_state_backup');
+                    if (savedState) {
+                        const appState = JSON.parse(savedState);
+                        console.log('Restored app state:', appState);
+                        
+                        // Calculate time spent in background
+                        const backgroundDuration = now - (appState.backgroundTimestamp || now);
+                        console.log('App was in background for:', Math.round(backgroundDuration / 1000), 'seconds');
+                        
+                        // If we had a chat partner, try to restore and sync
+                        if (appState.currentChatPartnerId && currentChatPartner?.id === appState.currentChatPartnerId) {
+                            console.log('Syncing messages for restored chat partner:', appState.currentChatPartnerUsername);
+                            await syncMissedMessages();
+                        } else if (appState.currentChatPartnerId && !currentChatPartner) {
+                            console.log('Previous chat partner was lost, attempting recovery');
+                            // Try to restore chat partner if we lost context
+                            const users = await loadUsersData();
+                            const restoredPartner = users?.find(u => u.id === appState.currentChatPartnerId);
+                            if (restoredPartner) {
+                                console.log('Restored chat partner:', restoredPartner.username);
+                                currentChatPartner = restoredPartner;
+                                await syncMissedMessages();
+                            }
+                        }
+                    }
+                    
+                    // Update presence
+                    if (now - lastPresenceUpdate > PRESENCE_UPDATE_COOLDOWN) {
+                        updateUserPresence(true);
+                        lastPresenceUpdate = now;
+                    }
+                    
+                    // Refresh user list to get latest presence and messages
+                    loadUsers();
+                    
+                    // Re-establish real-time subscriptions if needed
+                    if (!messagesSubscription || !usersSubscription) {
+                        console.log('Re-establishing real-time subscriptions after background');
+                        setupRealtimeSubscriptions();
+                    }
+                    
+                } catch (error) {
+                    console.error('Error during background recovery:', error);
+                }
+                
+                wasAppHidden = false;
+            }
         }
     }
 });
+
+// Add page focus/blur events for additional mobile support with enhanced recovery
+window.addEventListener('focus', async () => {
+    if (currentUser && wasAppHidden) {
+        console.log('Window focused, performing comprehensive sync...');
+        
+        try {
+            // Check if we lost chat context and try to restore
+            if (!currentChatPartner) {
+                const savedState = localStorage.getItem('app_state_backup');
+                if (savedState) {
+                    const appState = JSON.parse(savedState);
+                    if (appState.currentChatPartnerId) {
+                        console.log('Attempting to restore lost chat partner:', appState.currentChatPartnerUsername);
+                        
+                        // Load users and find the previous chat partner
+                        const users = await loadUsersData();
+                        const restoredPartner = users?.find(u => u.id === appState.currentChatPartnerId);
+                        if (restoredPartner) {
+                            currentChatPartner = restoredPartner;
+                            console.log('Successfully restored chat partner:', restoredPartner.username);
+                            
+                            // Update UI to show restored chat
+                            const messageInput = document.getElementById('message-input');
+                            const sendBtn = document.getElementById('send-btn');
+                            if (messageInput && sendBtn) {
+                                messageInput.disabled = false;
+                                sendBtn.disabled = false;
+                                messageInput.placeholder = `Message ${restoredPartner.username}...`;
+                            }
+                            
+                            // Load messages for restored partner
+                            await loadMessages(restoredPartner.id);
+                        }
+                    }
+                }
+            }
+            
+            // Sync missed messages
+            if (currentChatPartner) {
+                await syncMissedMessages();
+            }
+            
+            // Force reload messages to ensure we have the latest
+            if (currentChatPartner) {
+                console.log('Force reloading messages after focus');
+                await loadMessages(currentChatPartner.id);
+            }
+            
+            updateUserPresence(true);
+            
+        } catch (error) {
+            console.error('Error during window focus recovery:', error);
+        }
+        
+        wasAppHidden = false;
+    }
+});
+
+window.addEventListener('blur', () => {
+    if (currentUser) {
+        wasAppHidden = true;
+        lastSyncTime = new Date().toISOString();
+        
+        // Enhanced state backup on blur
+        const appState = {
+            currentChatPartnerId: currentChatPartner?.id || null,
+            currentChatPartnerUsername: currentChatPartner?.username || null,
+            lastSyncTime: lastSyncTime,
+            lastMessageCheck: lastMessageCheck,
+            blurTimestamp: Date.now()
+        };
+        
+        try {
+            localStorage.setItem('app_state_backup', JSON.stringify(appState));
+            localStorage.setItem('app_last_active', lastSyncTime);
+            console.log('Enhanced app state saved on blur');
+        } catch (error) {
+            console.error('Failed to save app state on blur:', error);
+        }
+    }
+});
+
+// Enhanced sync for missed messages with comprehensive mobile support
+async function syncMissedMessages() {
+    if (!currentChatPartner || !currentUser) {
+        console.log('No chat partner or user for message sync');
+        return;
+    }
+    
+    try {
+        const lastActive = localStorage.getItem('app_last_active') || lastSyncTime;
+        
+        console.log('Syncing missed messages since:', lastActive, 'for partner:', currentChatPartner.username);
+        
+        // Get ALL messages for this conversation to ensure we didn't miss any
+        const { data: allMessages, error: allError } = await supabaseClient
+            .from('messages')
+            .select('*')
+            .or(`and(sender_id.eq.${currentUser.id},receiver_id.eq.${currentChatPartner.id}),and(sender_id.eq.${currentChatPartner.id},receiver_id.eq.${currentUser.id})`)
+            .order('timestamp', { ascending: true });
+            
+        if (allError) {
+            console.error('Failed to get all messages:', allError);
+            
+            // Fallback: try just missed messages
+            const { data: missedMessages, error: missedError } = await supabaseClient
+                .from('messages')
+                .select('*')
+                .or(`and(sender_id.eq.${currentUser.id},receiver_id.eq.${currentChatPartner.id}),and(sender_id.eq.${currentChatPartner.id},receiver_id.eq.${currentUser.id})`)
+                .gt('timestamp', lastActive)
+                .order('timestamp', { ascending: true });
+                
+            if (missedError) {
+                console.error('Failed to sync any missed messages:', missedError);
+                return;
+            }
+            
+            if (missedMessages && missedMessages.length > 0) {
+                console.log('Found', missedMessages.length, 'missed messages (fallback)');
+                await processSyncedMessages(missedMessages, 'missed');
+            }
+            return;
+        }
+        
+        if (allMessages && allMessages.length > 0) {
+            console.log('Retrieved', allMessages.length, 'total messages for sync verification');
+            
+            // Get current UI messages to compare
+            const chatMessages = document.getElementById('chat-messages');
+            const currentUIMessageIds = new Set();
+            
+            if (chatMessages) {
+                const messageElements = chatMessages.querySelectorAll('[data-message-id]');
+                messageElements.forEach(el => {
+                    const messageId = el.getAttribute('data-message-id');
+                    if (messageId && !messageId.startsWith('temp-')) {
+                        currentUIMessageIds.add(messageId);
+                    }
+                });
+            }
+            
+            // Find messages that are in server but not in UI
+            const missingMessages = allMessages.filter(msg => !currentUIMessageIds.has(msg.id.toString()));
+            
+            if (missingMessages.length > 0) {
+                console.log('Found', missingMessages.length, 'messages missing from UI');
+                await processSyncedMessages(missingMessages, 'missing');
+                
+                // Force full reload to ensure consistency
+                console.log('Performing full message reload for consistency');
+                await loadMessages(currentChatPartner.id);
+            } else {
+                console.log('All messages are in sync');
+            }
+            
+            // Update offline storage with complete message set
+            storeMessagesOffline(allMessages);
+        }
+        
+    } catch (error) {
+        console.error('Error syncing missed messages:', error);
+        
+        // Last resort: reload all messages
+        try {
+            console.log('Attempting full message reload as last resort');
+            await loadMessages(currentChatPartner.id);
+        } catch (reloadError) {
+            console.error('Even full reload failed:', reloadError);
+        }
+    }
+}
+
+// Helper function to process synced messages
+async function processSyncedMessages(messages, syncType) {
+    const chatMessages = document.getElementById('chat-messages');
+    if (!chatMessages || !messages.length) return;
+    
+    let addedNewMessages = false;
+    
+    messages.forEach(message => {
+        // Check if message already exists to prevent duplicates
+        const existingMessage = chatMessages.querySelector(`[data-message-id="${message.id}"]`);
+        if (!existingMessage) {
+            // Cache the message
+            messageCache.set(message.id, message);
+            
+            // Store offline
+            storeMessageOffline(message);
+            
+            // Remove welcome message if it exists
+            const welcomeMsg = chatMessages.querySelector('.welcome-message');
+            if (welcomeMsg) {
+                welcomeMsg.remove();
+            }
+            
+            // Add to UI
+            const messageElement = createMessageElement(message);
+            messageElement.setAttribute('data-message-id', message.id);
+            
+            // Add with animation for better UX
+            messageElement.style.opacity = '0';
+            messageElement.style.transform = 'translateY(20px)';
+            chatMessages.appendChild(messageElement);
+            
+            // Animate in
+            setTimeout(() => {
+                messageElement.style.opacity = '1';
+                messageElement.style.transform = 'translateY(0)';
+                messageElement.style.transition = 'all 0.3s ease';
+            }, 50);
+            
+            addedNewMessages = true;
+            
+            // Mark as read if it's for current user
+            if (message.receiver_id === currentUser.id) {
+                markMessageAsRead(message.id);
+            }
+        }
+    });
+    
+    if (addedNewMessages) {
+        // Show notification to user
+        showError(`${messages.length} ${syncType} message${messages.length > 1 ? 's' : ''} synced`, null, {
+            type: 'info',
+            duration: 3000
+        });
+        
+        // Scroll to bottom smoothly
+        setTimeout(() => {
+            chatMessages.scrollTo({
+                top: chatMessages.scrollHeight,
+                behavior: 'smooth'
+            });
+        }, 100);
+    }
+}
 
 // Periodic connection check with quality monitoring
 function startConnectionCheck() {
@@ -2145,6 +2641,9 @@ function showChatApp() {
     startConnectionCheck(); // Start connection checking
     startFailedMessageRetry(); // Start retrying failed messages
     
+    // Initialize mobile message recovery
+    initializeMobileMessageRecovery();
+    
     // Add connection status indicator
     updateConnectionStatus('connected');
 }
@@ -2281,8 +2780,10 @@ function displayMessages(messages) {
     updateUnreadCounts();
 }
 
-// Store messages in localStorage for offline access
+// Store messages in localStorage for offline access with enhanced mobile persistence
 function storeMessagesOffline(messages) {
+    if (!currentUser || !messages) return;
+    
     try {
         const key = `securechat_messages_${currentUser.id}`;
         const existingMessages = getOfflineMessages();
@@ -2290,45 +2791,173 @@ function storeMessagesOffline(messages) {
         // Merge with existing messages, avoiding duplicates
         const messageMap = new Map();
         
-        // Add existing messages
+        // Add existing messages first
         existingMessages.forEach(msg => {
-            messageMap.set(msg.id, msg);
+            if (msg && msg.id) {
+                messageMap.set(msg.id, msg);
+            }
         });
         
-        // Add new messages
+        // Add new messages (may overwrite existing)
         messages.forEach(msg => {
-            messageMap.set(msg.id, msg);
+            if (msg && msg.id) {
+                messageMap.set(msg.id, msg);
+            }
         });
         
         const allMessages = Array.from(messageMap.values());
-        localStorage.setItem(key, JSON.stringify(allMessages));
+        
+        // Store with timestamp for debugging
+        const storageData = {
+            messages: allMessages,
+            lastUpdated: new Date().toISOString(),
+            version: 2 // Version for future migrations
+        };
+        
+        localStorage.setItem(key, JSON.stringify(storageData));
+        console.log('Stored', allMessages.length, 'messages offline');
+        
+        // Also store in sessionStorage as backup for mobile browsers
+        try {
+            sessionStorage.setItem(key + '_backup', JSON.stringify(storageData));
+        } catch (sessionError) {
+            console.warn('Failed to store backup in sessionStorage:', sessionError);
+        }
+        
     } catch (error) {
         console.error('Failed to store messages offline:', error);
+        
+        // Try alternative storage method for mobile
+        try {
+            const fallbackKey = `securechat_fallback_${currentUser.id}`;
+            const simpleData = messages.map(msg => ({
+                id: msg.id,
+                sender_id: msg.sender_id,
+                receiver_id: msg.receiver_id,
+                content: msg.content,
+                timestamp: msg.timestamp,
+                type: msg.type || 'text'
+            }));
+            localStorage.setItem(fallbackKey, JSON.stringify(simpleData));
+            console.log('Used fallback storage for', simpleData.length, 'messages');
+        } catch (fallbackError) {
+            console.error('Even fallback storage failed:', fallbackError);
+        }
     }
 }
 
-// Store a single message offline
+// Store a single message offline with enhanced persistence
 function storeMessageOffline(message) {
+    if (!currentUser || !message || !message.id) return;
+    
     try {
         const key = `securechat_messages_${currentUser.id}`;
         const existingMessages = getOfflineMessages();
         
         // Check if message already exists
-        const messageExists = existingMessages.some(msg => msg.id === message.id);
+        const messageExists = existingMessages.some(msg => msg && msg.id === message.id);
         if (!messageExists) {
             existingMessages.push(message);
-            localStorage.setItem(key, JSON.stringify(existingMessages));
+            
+            // Store with metadata
+            const storageData = {
+                messages: existingMessages,
+                lastUpdated: new Date().toISOString(),
+                version: 2
+            };
+            
+            localStorage.setItem(key, JSON.stringify(storageData));
+            console.log('Stored new message offline:', message.id);
+            
+            // Backup to sessionStorage
+            try {
+                sessionStorage.setItem(key + '_backup', JSON.stringify(storageData));
+            } catch (sessionError) {
+                console.warn('Failed to backup message to sessionStorage:', sessionError);
+            }
+        } else {
+            console.log('Message already exists offline:', message.id);
         }
     } catch (error) {
         console.error('Failed to store message offline:', error);
+        
+        // Try fallback method
+        try {
+            const fallbackKey = `securechat_fallback_${currentUser.id}`;
+            const fallbackMessages = JSON.parse(localStorage.getItem(fallbackKey) || '[]');
+            const messageExists = fallbackMessages.some(msg => msg.id === message.id);
+            if (!messageExists) {
+                fallbackMessages.push({
+                    id: message.id,
+                    sender_id: message.sender_id,
+                    receiver_id: message.receiver_id,
+                    content: message.content,
+                    timestamp: message.timestamp,
+                    type: message.type || 'text'
+                });
+                localStorage.setItem(fallbackKey, JSON.stringify(fallbackMessages));
+                console.log('Used fallback storage for message:', message.id);
+            }
+        } catch (fallbackError) {
+            console.error('Even fallback message storage failed:', fallbackError);
+        }
     }
 }
 
 function getOfflineMessages() {
+    if (!currentUser) return [];
+    
     try {
         const key = `securechat_messages_${currentUser.id}`;
         const stored = localStorage.getItem(key);
-        return stored ? JSON.parse(stored) : [];
+        
+        if (stored) {
+            const parsedData = JSON.parse(stored);
+            
+            // Handle new format with metadata
+            if (parsedData.messages && Array.isArray(parsedData.messages)) {
+                console.log('Retrieved', parsedData.messages.length, 'messages from offline storage (v2)');
+                return parsedData.messages;
+            }
+            
+            // Handle old format (direct array)
+            if (Array.isArray(parsedData)) {
+                console.log('Retrieved', parsedData.length, 'messages from offline storage (v1)');
+                return parsedData;
+            }
+        }
+        
+        // Try backup from sessionStorage
+        try {
+            const backupStored = sessionStorage.getItem(key + '_backup');
+            if (backupStored) {
+                const backupData = JSON.parse(backupStored);
+                if (backupData.messages && Array.isArray(backupData.messages)) {
+                    console.log('Retrieved', backupData.messages.length, 'messages from backup storage');
+                    return backupData.messages;
+                }
+            }
+        } catch (backupError) {
+            console.warn('Failed to retrieve backup messages:', backupError);
+        }
+        
+        // Try fallback storage
+        try {
+            const fallbackKey = `securechat_fallback_${currentUser.id}`;
+            const fallbackStored = localStorage.getItem(fallbackKey);
+            if (fallbackStored) {
+                const fallbackData = JSON.parse(fallbackStored);
+                if (Array.isArray(fallbackData)) {
+                    console.log('Retrieved', fallbackData.length, 'messages from fallback storage');
+                    return fallbackData;
+                }
+            }
+        } catch (fallbackError) {
+            console.warn('Failed to retrieve fallback messages:', fallbackError);
+        }
+        
+        return [];
+        
     } catch (error) {
         console.error('Failed to retrieve offline messages:', error);
         return [];

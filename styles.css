@@ -401,23 +401,24 @@ body::before {
     }
 }
 
-/* Calculator Styles - Modern Glassmorphism */
+/* Ultra-Modern Calculator Styles - Glassmorphism Dark Theme */
 .calculator {
-    width: 100%;
-    max-width: 400px;
-    margin: 50px auto;
-    background: var(--card-bg);
-    backdrop-filter: blur(20px);
-    border: 1px solid var(--glass-border);
-    border-radius: 28px;
-    padding: 30px;
-    box-shadow: 
-        0 25px 50px var(--shadow-heavy),
-        0 0 0 1px var(--glass-border),
-        inset 0 1px 0 rgba(255, 255, 255, 0.1);
-    animation: fadeIn 0.6s cubic-bezier(0.34, 1.56, 0.64, 1);
+    background: linear-gradient(135deg, #1e1e2e 0%, #2d2d42 100%);
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    padding: 0;
+    margin: 0;
     position: relative;
     overflow: hidden;
+    box-shadow: none;
+    border-radius: 0;
+    backdrop-filter: none;
+    max-width: none;
+    width: 100%;
+    animation: calculatorFadeIn 1s cubic-bezier(0.25, 0.46, 0.45, 0.94);
 }
 
 .calculator::before {
@@ -427,12 +428,55 @@ body::before {
     left: 0;
     right: 0;
     bottom: 0;
-    background: linear-gradient(135deg, var(--accent-blue) 0%, var(--accent-purple) 100%);
-    opacity: 0.03;
+    background: 
+        radial-gradient(circle at 20% 30%, rgba(102, 126, 234, 0.1) 0%, transparent 50%),
+        radial-gradient(circle at 80% 70%, rgba(175, 82, 222, 0.08) 0%, transparent 50%),
+        radial-gradient(circle at 40% 80%, rgba(255, 149, 0, 0.05) 0%, transparent 50%);
     pointer-events: none;
+    animation: backgroundFloat 20s ease-in-out infinite;
 }
 
-@keyframes fadeIn {
+@keyframes calculatorFadeIn {
+    from {
+        opacity: 0;
+        transform: scale(0.95);
+    }
+    to {
+        opacity: 1;
+        transform: scale(1);
+    }
+}
+
+@keyframes backgroundFloat {
+    0%, 100% { 
+        transform: translateY(0) rotate(0deg) scale(1); 
+    }
+    33% { 
+        transform: translateY(-5px) rotate(2deg) scale(1.02); 
+    }
+    66% { 
+        transform: translateY(3px) rotate(-1deg) scale(0.98); 
+    }
+}
+
+.calculator .calculator-container {
+    width: min(420px, 90vw);
+    padding: 40px;
+    background: rgba(30, 30, 46, 0.8);
+    backdrop-filter: blur(40px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 32px;
+    box-shadow: 
+        0 32px 64px rgba(0, 0, 0, 0.4),
+        0 0 0 1px rgba(255, 255, 255, 0.05),
+        inset 0 1px 0 rgba(255, 255, 255, 0.1),
+        inset 0 -1px 0 rgba(0, 0, 0, 0.2);
+    position: relative;
+    z-index: 1;
+    animation: containerSlideUp 0.8s cubic-bezier(0.34, 1.56, 0.64, 1) 0.2s both;
+}
+
+@keyframes containerSlideUp {
     from {
         opacity: 0;
         transform: translateY(50px) scale(0.9);
@@ -444,32 +488,52 @@ body::before {
 }
 
 .display {
-    background: var(--glass-bg);
-    backdrop-filter: blur(15px);
-    border: 1px solid var(--glass-border);
-    border-radius: 20px;
-    padding: 35px 25px;
-    margin-bottom: 25px;
+    background: rgba(0, 0, 0, 0.4);
+    backdrop-filter: blur(20px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 24px;
+    padding: 40px 30px;
+    margin-bottom: 30px;
     text-align: right;
+    position: relative;
+    overflow: hidden;
     box-shadow: 
-        inset 0 2px 10px rgba(0, 0, 0, 0.1),
-        0 1px 0 rgba(255, 255, 255, 0.1);
+        inset 0 2px 10px rgba(0, 0, 0, 0.3),
+        inset 0 1px 0 rgba(255, 255, 255, 0.1),
+        0 4px 20px rgba(0, 0, 0, 0.2);
+}
+
+.display::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: linear-gradient(135deg, rgba(102, 126, 234, 0.03) 0%, rgba(175, 82, 222, 0.02) 100%);
+    pointer-events: none;
 }
 
 #calc-display {
-    font-size: 2.8rem;
+    font-family: 'SF Mono', 'Monaco', 'Cascadia Code', 'Roboto Mono', monospace;
+    font-size: 3.2rem;
     font-weight: 300;
-    color: var(--text-primary);
-    min-height: 70px;
+    color: #ffffff;
+    min-height: 80px;
     display: flex;
     align-items: center;
     justify-content: flex-end;
     word-break: break-all;
-    letter-spacing: 1px;
-    text-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
-    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    letter-spacing: 2px;
+    text-shadow: 0 2px 20px rgba(255, 255, 255, 0.1);
+    transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
     position: relative;
     overflow: hidden;
+    line-height: 1.1;
+    background: linear-gradient(135deg, #ffffff 0%, #e0e0e0 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
 }
 
 /* Calculator feedback animations */
@@ -609,25 +673,30 @@ body::before {
 .buttons {
     display: grid;
     grid-template-columns: repeat(4, 1fr);
-    gap: 16px;
+    gap: 20px;
+    position: relative;
 }
 
 .calculator button {
-    height: 75px;
+    height: 80px;
     border: none;
-    border-radius: 18px;
-    font-size: 1.6rem;
-    font-weight: 600;
+    border-radius: 20px;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    font-size: 1.8rem;
+    font-weight: 500;
     cursor: pointer;
-    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    transition: all 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
     -webkit-tap-highlight-color: transparent;
     touch-action: manipulation;
     user-select: none;
     position: relative;
     overflow: hidden;
     letter-spacing: 0.5px;
-    backdrop-filter: blur(10px);
-    border: 1px solid var(--glass-border);
+    backdrop-filter: blur(20px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    box-shadow: 
+        0 8px 32px rgba(0, 0, 0, 0.3),
+        inset 0 1px 0 rgba(255, 255, 255, 0.1);
 }
 
 .calculator button::before {
@@ -637,62 +706,115 @@ body::before {
     left: 0;
     right: 0;
     bottom: 0;
-    background: linear-gradient(135deg, rgba(255, 255, 255, 0.1) 0%, rgba(255, 255, 255, 0.05) 100%);
+    background: radial-gradient(circle at center, rgba(255, 255, 255, 0.1) 0%, transparent 70%);
     opacity: 0;
-    transition: opacity 0.2s ease;
+    transition: opacity 0.3s ease;
+    pointer-events: none;
 }
 
 .calculator button:hover::before {
     opacity: 1;
 }
 
-.btn-number {
-    background: var(--glass-bg);
-    color: var(--text-primary);
+.calculator button:active {
+    transform: scale(0.95);
     box-shadow: 
-        0 4px 15px var(--shadow-light),
-        inset 0 1px 0 rgba(255, 255, 255, 0.1);
-}
-
-.btn-number:hover, .btn-number:active {
-    transform: translateY(-2px) scale(1.02);
-    box-shadow: 
-        0 8px 25px var(--shadow-medium),
+        0 4px 16px rgba(0, 0, 0, 0.4),
         inset 0 1px 0 rgba(255, 255, 255, 0.15);
 }
 
+/* Enhanced Number Buttons */
+.btn-number {
+    background: linear-gradient(135deg, 
+        rgba(45, 45, 66, 0.9) 0%, 
+        rgba(35, 35, 52, 0.8) 100%);
+    color: #ffffff;
+    box-shadow: 
+        0 8px 32px rgba(0, 0, 0, 0.3),
+        inset 0 1px 0 rgba(255, 255, 255, 0.15),
+        0 0 0 1px rgba(255, 255, 255, 0.1);
+}
+
+.btn-number:hover {
+    background: linear-gradient(135deg, 
+        rgba(55, 55, 76, 0.95) 0%, 
+        rgba(45, 45, 62, 0.9) 100%);
+    transform: translateY(-2px);
+    box-shadow: 
+        0 12px 40px rgba(0, 0, 0, 0.4),
+        inset 0 1px 0 rgba(255, 255, 255, 0.2),
+        0 0 20px rgba(102, 126, 234, 0.1);
+}
+
+/* Enhanced Operator Buttons */
 .btn-operator {
-    background: linear-gradient(135deg, var(--accent-orange) 0%, #FF6B35 100%);
-    color: var(--text-primary);
-    box-shadow: 0 4px 15px rgba(255, 149, 0, 0.3);
+    background: linear-gradient(135deg, 
+        rgba(255, 149, 0, 0.9) 0%, 
+        rgba(255, 107, 53, 0.85) 100%);
+    color: #ffffff;
+    box-shadow: 
+        0 8px 32px rgba(255, 149, 0, 0.3),
+        inset 0 1px 0 rgba(255, 255, 255, 0.2),
+        0 0 0 1px rgba(255, 149, 0, 0.2);
 }
 
-.btn-operator:hover, .btn-operator:active {
-    transform: translateY(-2px) scale(1.02);
-    box-shadow: 0 8px 25px rgba(255, 149, 0, 0.4);
+.btn-operator:hover {
+    background: linear-gradient(135deg, 
+        rgba(255, 159, 10, 0.95) 0%, 
+        rgba(255, 117, 63, 0.9) 100%);
+    transform: translateY(-2px);
+    box-shadow: 
+        0 12px 40px rgba(255, 149, 0, 0.4),
+        inset 0 1px 0 rgba(255, 255, 255, 0.25),
+        0 0 20px rgba(255, 149, 0, 0.3);
 }
 
+/* Enhanced Equals Button */
 .btn-equals {
-    background: linear-gradient(135deg, var(--accent-blue) 0%, var(--accent-purple) 100%);
-    color: var(--text-primary);
+    background: linear-gradient(135deg, 
+        rgba(102, 126, 234, 0.9) 0%, 
+        rgba(175, 82, 222, 0.85) 100%);
+    color: #ffffff;
     grid-row: span 2;
-    box-shadow: 0 4px 15px rgba(0, 122, 255, 0.3);
+    font-size: 2rem;
+    box-shadow: 
+        0 8px 32px rgba(102, 126, 234, 0.3),
+        inset 0 1px 0 rgba(255, 255, 255, 0.2),
+        0 0 0 1px rgba(102, 126, 234, 0.2);
 }
 
-.btn-equals:hover, .btn-equals:active {
-    transform: translateY(-2px) scale(1.02);
-    box-shadow: 0 8px 25px rgba(0, 122, 255, 0.4);
+.btn-equals:hover {
+    background: linear-gradient(135deg, 
+        rgba(112, 136, 244, 0.95) 0%, 
+        rgba(185, 92, 232, 0.9) 100%);
+    transform: translateY(-2px);
+    box-shadow: 
+        0 12px 40px rgba(102, 126, 234, 0.4),
+        inset 0 1px 0 rgba(255, 255, 255, 0.25),
+        0 0 20px rgba(102, 126, 234, 0.3);
 }
 
+/* Enhanced Clear Button */
 .btn-clear {
-    background: linear-gradient(135deg, var(--text-muted) 0%, #8E8E93 100%);
-    color: var(--text-primary);
-    box-shadow: 0 4px 15px rgba(142, 142, 147, 0.3);
+    background: linear-gradient(135deg, 
+        rgba(142, 142, 147, 0.8) 0%, 
+        rgba(120, 120, 125, 0.75) 100%);
+    color: #ffffff;
+    box-shadow: 
+        0 8px 32px rgba(142, 142, 147, 0.3),
+        inset 0 1px 0 rgba(255, 255, 255, 0.15),
+        0 0 0 1px rgba(142, 142, 147, 0.2);
 }
 
-.btn-clear:hover, .btn-clear:active {
-    transform: translateY(-2px) scale(1.02);
-    box-shadow: 0 8px 25px rgba(142, 142, 147, 0.4);
+.btn-clear:hover {
+    background: linear-gradient(135deg, 
+        rgba(152, 152, 157, 0.85) 0%, 
+        rgba(130, 130, 135, 0.8) 100%);
+    transform: translateY(-2px);
+    box-shadow: 
+        0 12px 40px rgba(142, 142, 147, 0.4),
+        inset 0 1px 0 rgba(255, 255, 255, 0.2),
+        0 0 20px rgba(142, 142, 147, 0.2);
 }
 
 .zero {
@@ -701,31 +823,53 @@ body::before {
 
 .auth-trigger {
     text-align: center;
-    margin-top: 25px;
+    margin-top: 35px;
+    padding: 25px 20px;
+    background: rgba(0, 0, 0, 0.2);
+    backdrop-filter: blur(15px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 20px;
     font-size: 14px;
-    color: var(--accent-blue);
-    cursor: pointer;
-    text-decoration: none;
     font-weight: 500;
-    letter-spacing: 0.3px;
-    transition: all 0.3s ease;
+    letter-spacing: 0.5px;
+    transition: all 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+    box-shadow: 
+        0 8px 32px rgba(0, 0, 0, 0.3),
+        inset 0 1px 0 rgba(255, 255, 255, 0.1);
 }
 
-.auth-trigger:hover {
-    color: var(--accent-purple);
+.auth-trigger span {
+    color: rgba(102, 126, 234, 0.9);
+    cursor: pointer;
+    text-decoration: none;
+    transition: all 0.3s ease;
+    display: inline-block;
+    padding: 8px 12px;
+    border-radius: 12px;
+    background: linear-gradient(135deg, rgba(102, 126, 234, 0.1) 0%, rgba(175, 82, 222, 0.05) 100%);
+}
+
+.auth-trigger span:hover {
+    color: rgba(175, 82, 222, 1);
+    background: linear-gradient(135deg, rgba(102, 126, 234, 0.15) 0%, rgba(175, 82, 222, 0.1) 100%);
     transform: translateY(-1px);
+    box-shadow: 0 4px 15px rgba(102, 126, 234, 0.2);
 }
 
 .auth-trigger small {
-    color: var(--text-muted) !important;
+    color: rgba(255, 255, 255, 0.4) !important;
     font-size: 12px;
-    margin-top: 8px;
+    margin-top: 12px;
     display: block;
-    transition: color 0.3s ease;
+    transition: all 0.3s ease;
+    padding: 6px 8px;
+    border-radius: 8px;
 }
 
 .auth-trigger small:hover {
-    color: var(--text-secondary) !important;
+    color: rgba(255, 255, 255, 0.7) !important;
+    background: rgba(255, 255, 255, 0.05);
+    transform: translateY(-1px);
 }
 
 /* Chat App Styles - Modern Glassmorphism */
@@ -2126,65 +2270,181 @@ body::before {
     transform: translateY(0);
 }
 
-/* Mobile Responsive - Enhanced */
+/* Modern Mobile UI Design - Complete Redesign */
 @media (max-width: 768px) {
+    body {
+        background: linear-gradient(135deg, #1e1e2e 0%, #2d2d42 100%);
+        overflow: hidden;
+    }
+    
     .calculator {
-        margin: 20px;
-        max-width: calc(100% - 40px);
-        padding: 25px;
-    }
-    
-    .calculator button {
-        height: 70px;
-        font-size: 1.4rem;
-        border-radius: 16px;
-        min-height: 70px;
-        touch-action: manipulation;
-    }
-    
-    #calc-display {
-        font-size: 2.2rem;
-        min-height: 60px;
-        padding: 25px 20px;
+        margin: 0;
+        max-width: 100%;
+        width: 100%;
+        height: 100vh;
+        padding: 20px;
+        border-radius: 0;
+        background: linear-gradient(135deg, #1e1e2e 0%, #2d2d42 100%);
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        box-shadow: none;
     }
     
     .display {
-        padding: 25px 20px;
-        margin-bottom: 20px;
+        background: rgba(0, 0, 0, 0.4);
+        backdrop-filter: blur(20px);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 20px;
+        padding: 40px 30px;
+        margin-bottom: 30px;
+        box-shadow: 
+            inset 0 2px 10px rgba(0, 0, 0, 0.3),
+            0 8px 32px rgba(0, 0, 0, 0.3);
+    }
+    
+    #calc-display {
+        font-size: 3rem;
+        font-weight: 200;
+        min-height: 80px;
+        text-shadow: 0 0 20px rgba(255, 255, 255, 0.3);
+        letter-spacing: 2px;
     }
     
     .buttons {
-        gap: 12px;
+        gap: 15px;
+        flex: 1;
+        display: grid;
+        align-content: center;
     }
     
-    .mobile-only {
-        display: block !important;
+    .calculator button {
+        height: 80px;
+        font-size: 1.8rem;
+        font-weight: 300;
+        border-radius: 20px;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        backdrop-filter: blur(20px);
+        box-shadow: 
+            0 8px 32px rgba(0, 0, 0, 0.3),
+            inset 0 1px 0 rgba(255, 255, 255, 0.1);
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    
+    .btn-number {
+        background: rgba(255, 255, 255, 0.08);
+        color: var(--text-primary);
+    }
+    
+    .btn-operator {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        box-shadow: 
+            0 8px 32px rgba(102, 126, 234, 0.4),
+            inset 0 1px 0 rgba(255, 255, 255, 0.2);
+    }
+    
+    .btn-equals {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        box-shadow: 
+            0 8px 32px rgba(102, 126, 234, 0.4),
+            inset 0 1px 0 rgba(255, 255, 255, 0.2);
+    }
+    
+    .btn-clear {
+        background: linear-gradient(135deg, #ff6b6b 0%, #ee5a52 100%);
+        color: white;
+        box-shadow: 
+            0 8px 32px rgba(255, 107, 107, 0.4),
+            inset 0 1px 0 rgba(255, 255, 255, 0.2);
+    }
+    
+    /* Modern Chat Interface for Mobile */
+    .chat-app {
+        background: linear-gradient(135deg, #1e1e2e 0%, #2d2d42 100%);
+        height: 100vh;
+        overflow: hidden;
+    }
+    
+    .chat-header {
+        background: rgba(30, 30, 46, 0.95);
+        backdrop-filter: blur(20px);
+        border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        padding: 15px 20px;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+    }
+    
+    .chat-header h2 {
+        font-size: 1.4rem;
+        font-weight: 600;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
     }
     
     .chat-container {
-        flex-direction: column;
-        height: calc(100vh - 90px);
+        height: calc(100vh - 80px);
         position: relative;
+        background: transparent;
     }
     
     .user-list {
         width: 100%;
         height: 100%;
+        background: rgba(30, 30, 46, 0.95);
+        backdrop-filter: blur(20px);
         border-right: none;
-        border-bottom: none;
+        padding: 20px;
         position: absolute;
         top: 0;
         left: 0;
-        background: var(--card-bg);
-        backdrop-filter: blur(20px);
         z-index: 10;
-        transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1);
-        box-shadow: 4px 0 20px var(--shadow-heavy);
-        padding: 1.2rem;
+        transition: transform 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+        box-shadow: 4px 0 30px rgba(0, 0, 0, 0.4);
     }
     
     .user-list.mobile-hidden {
         transform: translateX(-100%);
+    }
+    
+    .user-item {
+        background: rgba(255, 255, 255, 0.05);
+        backdrop-filter: blur(15px);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        padding: 20px 18px;
+        margin-bottom: 12px;
+        border-radius: 16px;
+        min-height: 75px;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    
+    .user-item:hover, .user-item:active {
+        background: rgba(255, 255, 255, 0.1);
+        transform: translateY(-2px);
+        box-shadow: 0 8px 30px rgba(0, 0, 0, 0.3);
+    }
+    
+    .user-item.active {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        box-shadow: 
+            0 8px 30px rgba(102, 126, 234, 0.4),
+            inset 0 1px 0 rgba(255, 255, 255, 0.2);
+    }
+    
+    .user-name {
+        font-size: 16px;
+        font-weight: 600;
+        margin-bottom: 4px;
+        color: var(--text-primary);
+    }
+    
+    .user-last-active {
+        font-size: 13px;
+        color: rgba(255, 255, 255, 0.6);
+        font-weight: 400;
     }
     
     .chat-area {
@@ -2194,261 +2454,369 @@ body::before {
         top: 0;
         left: 0;
         transform: translateX(100%);
-        transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1);
-        background: var(--glass-bg);
+        transition: transform 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+        background: rgba(30, 30, 46, 0.98);
         backdrop-filter: blur(20px);
-        box-shadow: -4px 0 20px var(--shadow-heavy);
+        display: flex;
+        flex-direction: column;
     }
     
     .chat-area.mobile-visible {
         transform: translateX(0);
+        box-shadow: -4px 0 30px rgba(0, 0, 0, 0.4);
+    }
+    
+    .chat-header-mobile {
+        background: rgba(30, 30, 46, 0.95);
+        backdrop-filter: blur(20px);
+        border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        padding: 15px 20px;
+        display: flex;
+        align-items: center;
+        gap: 15px;
+        box-shadow: 0 2px 15px rgba(0, 0, 0, 0.3);
+    }
+    
+    .chat-header-mobile button {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        border: none;
+        padding: 12px 16px;
+        border-radius: 12px;
+        font-weight: 600;
+        box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
+        transition: all 0.3s ease;
+    }
+    
+    #current-chat-user {
+        font-size: 18px;
+        font-weight: 600;
+        color: var(--text-primary);
     }
     
     .chat-messages {
         flex: 1;
+        padding: 20px;
+        overflow-y: auto;
+        background: transparent;
+        gap: 15px;
         min-height: 0;
-        padding: 1rem;
-        gap: 10px;
     }
     
     .message {
         max-width: 85%;
-        padding: 12px 16px;
-        border-radius: 16px;
+        padding: 15px 20px;
+        border-radius: 20px;
+        backdrop-filter: blur(15px);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
         font-size: 15px;
+        line-height: 1.5;
     }
     
     .message.sent {
-        border-radius: 16px 16px 4px 16px;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        border-radius: 20px 20px 5px 20px;
+        align-self: flex-end;
+        box-shadow: 
+            0 4px 20px rgba(102, 126, 234, 0.4),
+            inset 0 1px 0 rgba(255, 255, 255, 0.2);
     }
     
     .message.received {
-        border-radius: 16px 16px 16px 4px;
-    }
-    
-    .modal-content {
-        width: 95%;
-        margin: 0 10px;
-        padding: 2rem;
-        border-radius: 20px;
-    }
-    
-    .chat-header {
-        padding: 1rem;
-        flex-wrap: wrap;
-        gap: 0.8rem;
-    }
-    
-    .chat-header h2 {
-        font-size: 1.3rem;
-    }
-    
-    .header-actions {
-        flex-direction: row;
-        gap: 1rem;
-        font-size: 13px;
-    }
-    
-    #user-info {
-        font-size: 12px;
-        font-weight: 500;
-    }
-    
-    .user-item {
-        padding: 18px 14px;
-        margin-bottom: 8px;
-        border-radius: 14px;
-        min-height: 70px;
-    }
-    
-    .user-name {
-        font-size: 16px;
-        font-weight: 600;
-    }
-    
-    .user-last-active {
-        font-size: 13px;
-    }
-    
-    .message-content {
-        font-size: 15px;
-        line-height: 1.4;
-    }
-    
-    .message-timestamp {
-        font-size: 10px;
+        background: rgba(255, 255, 255, 0.08);
+        color: var(--text-primary);
+        border-radius: 20px 20px 20px 5px;
+        align-self: flex-start;
     }
     
     .message-input-container {
-        padding: 1.2rem;
-        gap: 10px;
+        padding: 20px;
+        background: rgba(30, 30, 46, 0.95);
+        backdrop-filter: blur(20px);
+        border-top: 1px solid rgba(255, 255, 255, 0.1);
+        box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.3);
     }
     
     #message-input {
-        padding: 14px 18px;
-        border-radius: 22px;
+        background: rgba(255, 255, 255, 0.08);
+        backdrop-filter: blur(15px);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 25px;
+        padding: 15px 20px;
+        color: var(--text-primary);
         font-size: 16px;
-        min-height: 22px;
+        min-height: 50px;
+    }
+    
+    #message-input::placeholder {
+        color: rgba(255, 255, 255, 0.5);
     }
     
     #send-btn {
-        padding: 14px 20px;
-        border-radius: 22px;
-        min-width: 70px;
-        font-size: 14px;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        border-radius: 25px;
+        padding: 15px 25px;
+        font-weight: 600;
+        box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
+        border: none;
+        color: white;
     }
     
-    .auth-form input {
-        padding: 14px 18px;
-        font-size: 16px;
-        border-radius: 14px;
+    /* Search functionality mobile styles */
+    .chat-search-container {
+        margin-bottom: 15px;
     }
     
-    .auth-form button {
-        padding: 14px 20px;
-        font-size: 16px;
-        border-radius: 14px;
-    }
-    
-    .tab-button {
+    .chat-search-input {
+        background: rgba(255, 255, 255, 0.08);
+        backdrop-filter: blur(15px);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 15px;
         padding: 12px 16px;
-        font-size: 15px;
+        font-size: 16px !important;
+        color: var(--text-primary);
     }
     
-    .loading-text {
-        font-size: 16px;
-        margin-top: 25px;
-    }
-    
-    .spinner {
-        width: 50px;
-        height: 50px;
-    }
-    
-    .toast-error {
-        top: 20px;
-        right: 15px;
-        left: 15px;
-        max-width: none;
-        min-width: auto;
-        padding: 16px 20px;
-        border-radius: 14px;
-    }
-    
-    .welcome-message {
-        margin: 2rem auto;
-        padding: 25px;
-        font-size: 15px;
-        max-width: 90%;
+    .search-btn {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 12px;
+        width: 40px;
+        height: 40px;
+        color: white;
+        font-weight: 600;
+        box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
     }
 }
 
 @media (max-width: 480px) {
+    /* Ultra-modern calculator for small screens */
     .calculator {
-        margin: 15px;
-        padding: 20px;
-        max-width: calc(100% - 30px);
-        border-radius: 24px;
-    }
-    
-    .buttons {
-        gap: 10px;
-    }
-    
-    .calculator button {
-        height: 65px;
-        font-size: 1.3rem;
-        min-height: 65px;
-        border-radius: 14px;
-        touch-action: manipulation;
-        -webkit-touch-callout: none;
-        -webkit-user-select: none;
-        -khtml-user-select: none;
-        -moz-user-select: none;
-        -ms-user-select: none;
-        user-select: none;
-    }
-    
-    #calc-display {
-        font-size: 2rem;
-        padding: 20px 15px;
-        min-height: 50px;
+        padding: 15px;
+        height: 100vh;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-evenly;
+        background: linear-gradient(135deg, #1e1e2e 0%, #2d2d42 100%);
     }
     
     .display {
-        padding: 20px 15px;
-        margin-bottom: 18px;
-        border-radius: 16px;
+        background: rgba(0, 0, 0, 0.5);
+        backdrop-filter: blur(25px);
+        border: 1px solid rgba(255, 255, 255, 0.15);
+        border-radius: 25px;
+        padding: 35px 25px;
+        margin-bottom: 25px;
+        box-shadow: 
+            inset 0 2px 15px rgba(0, 0, 0, 0.4),
+            0 10px 40px rgba(0, 0, 0, 0.4);
     }
     
+    #calc-display {
+        font-size: 2.5rem;
+        font-weight: 100;
+        min-height: 70px;
+        text-shadow: 0 0 25px rgba(255, 255, 255, 0.4);
+        letter-spacing: 3px;
+    }
+    
+    .buttons {
+        gap: 12px;
+        flex: 1;
+        display: grid;
+        align-content: center;
+    }
+    
+    .calculator button {
+        height: 75px;
+        font-size: 1.6rem;
+        font-weight: 200;
+        border-radius: 18px;
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        backdrop-filter: blur(25px);
+        box-shadow: 
+            0 10px 40px rgba(0, 0, 0, 0.4),
+            inset 0 1px 0 rgba(255, 255, 255, 0.15);
+        transition: all 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+        letter-spacing: 1px;
+    }
+    
+    .btn-number {
+        background: rgba(255, 255, 255, 0.1);
+        color: rgba(255, 255, 255, 0.95);
+    }
+    
+    .btn-operator {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        font-weight: 300;
+        box-shadow: 
+            0 10px 40px rgba(102, 126, 234, 0.5),
+            inset 0 1px 0 rgba(255, 255, 255, 0.25);
+    }
+    
+    .btn-equals {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        font-weight: 300;
+        box-shadow: 
+            0 10px 40px rgba(102, 126, 234, 0.5),
+            inset 0 1px 0 rgba(255, 255, 255, 0.25);
+    }
+    
+    .btn-clear {
+        background: linear-gradient(135deg, #ff6b6b 0%, #ee5a52 100%);
+        color: white;
+        font-weight: 300;
+        box-shadow: 
+            0 10px 40px rgba(255, 107, 107, 0.5),
+            inset 0 1px 0 rgba(255, 255, 255, 0.25);
+    }
+    
+    .auth-trigger {
+        margin-top: 20px;
+        padding: 15px;
+        background: rgba(255, 255, 255, 0.05);
+        border-radius: 15px;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        backdrop-filter: blur(15px);
+    }
+    
+    /* Ultra-modern chat for small screens */
     .chat-header {
-        padding: 0.8rem 1rem;
+        padding: 12px 15px;
+        background: rgba(30, 30, 46, 0.98);
+        backdrop-filter: blur(25px);
     }
     
     .chat-header h2 {
         font-size: 1.2rem;
+        font-weight: 600;
+    }
+    
+    .header-actions {
+        gap: 10px;
+        font-size: 11px;
     }
     
     .user-list {
-        padding: 1rem;
+        padding: 15px;
+        background: rgba(30, 30, 46, 0.98);
+        backdrop-filter: blur(25px);
     }
     
     .user-item {
-        padding: 16px 12px;
-        margin-bottom: 6px;
-        border-radius: 12px;
-        min-height: 65px;
+        background: rgba(255, 255, 255, 0.06);
+        backdrop-filter: blur(20px);
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        padding: 18px 16px;
+        margin-bottom: 10px;
+        border-radius: 18px;
+        min-height: 70px;
+        box-shadow: 0 6px 25px rgba(0, 0, 0, 0.25);
+    }
+    
+    .user-item.active {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        box-shadow: 
+            0 8px 35px rgba(102, 126, 234, 0.5),
+            inset 0 1px 0 rgba(255, 255, 255, 0.25);
     }
     
     .user-name {
         font-size: 15px;
+        font-weight: 600;
     }
     
     .user-last-active {
         font-size: 12px;
+        opacity: 0.7;
+    }
+    
+    .chat-header-mobile {
+        padding: 12px 15px;
+        background: rgba(30, 30, 46, 0.98);
+        backdrop-filter: blur(25px);
+    }
+    
+    .chat-header-mobile button {
+        padding: 10px 14px;
+        border-radius: 10px;
+        font-size: 13px;
+        box-shadow: 0 4px 20px rgba(102, 126, 234, 0.4);
+    }
+    
+    #current-chat-user {
+        font-size: 16px;
+        font-weight: 600;
+    }
+    
+    .chat-messages {
+        padding: 15px;
+        gap: 12px;
     }
     
     .message {
-        max-width: 90%;
-        padding: 10px 14px;
-        border-radius: 14px;
+        max-width: 88%;
+        padding: 12px 18px;
+        border-radius: 18px;
+        font-size: 14px;
+        backdrop-filter: blur(20px);
+        box-shadow: 0 6px 25px rgba(0, 0, 0, 0.25);
     }
     
     .message.sent {
-        border-radius: 14px 14px 4px 14px;
+        border-radius: 18px 18px 4px 18px;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        box-shadow: 
+            0 6px 25px rgba(102, 126, 234, 0.5),
+            inset 0 1px 0 rgba(255, 255, 255, 0.2);
     }
     
     .message.received {
-        border-radius: 14px 14px 14px 4px;
-    }
-    
-    .message-content {
-        font-size: 14px;
+        border-radius: 18px 18px 18px 4px;
+        background: rgba(255, 255, 255, 0.08);
+        border: 1px solid rgba(255, 255, 255, 0.12);
     }
     
     .message-input-container {
-        padding: 1rem;
-        gap: 8px;
+        padding: 15px;
+        background: rgba(30, 30, 46, 0.98);
+        backdrop-filter: blur(25px);
+        gap: 10px;
     }
     
     #message-input {
-        padding: 12px 16px;
-        border-radius: 20px;
+        background: rgba(255, 255, 255, 0.08);
+        backdrop-filter: blur(20px);
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        border-radius: 22px;
+        padding: 12px 18px;
         font-size: 16px;
+        min-height: 45px;
     }
     
     #send-btn {
-        padding: 12px 18px;
-        border-radius: 20px;
+        padding: 12px 20px;
+        border-radius: 22px;
         min-width: 65px;
         font-size: 13px;
+        font-weight: 600;
+        box-shadow: 0 4px 20px rgba(102, 126, 234, 0.4);
     }
     
+    /* Modal improvements for small screens */
     .modal-content {
         padding: 1.5rem;
-        border-radius: 18px;
-        margin: 0 15px;
-        width: calc(100% - 30px);
+        border-radius: 20px;
+        margin: 0 10px;
+        width: calc(100% - 20px);
+        background: rgba(30, 30, 46, 0.95);
+        backdrop-filter: blur(25px);
+        border: 1px solid rgba(255, 255, 255, 0.15);
+        box-shadow: 0 25px 50px rgba(0, 0, 0, 0.5);
     }
     
     .auth-form {
@@ -2459,33 +2827,67 @@ body::before {
         padding: 12px 16px;
         font-size: 16px;
         border-radius: 12px;
+        background: rgba(255, 255, 255, 0.08);
+        backdrop-filter: blur(15px);
+        border: 1px solid rgba(255, 255, 255, 0.12);
     }
     
     .auth-form button {
         padding: 12px 18px;
         font-size: 15px;
         border-radius: 12px;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        box-shadow: 0 4px 20px rgba(102, 126, 234, 0.4);
     }
     
     .tab-button {
         padding: 10px 14px;
         font-size: 14px;
+        background: rgba(255, 255, 255, 0.05);
+        backdrop-filter: blur(15px);
+    }
+    
+    .tab-button.active {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
     }
     
     .auth-tabs {
-        border-radius: 10px;
-    }
-    
-    .toast-error {
-        top: 15px;
-        right: 10px;
-        left: 10px;
-        padding: 14px 18px;
         border-radius: 12px;
+        background: rgba(255, 255, 255, 0.05);
+        backdrop-filter: blur(15px);
+        border: 1px solid rgba(255, 255, 255, 0.12);
     }
     
-    .toast-error .toast-content {
-        font-size: 13px;
+    /* Enhanced search for small screens */
+    .chat-search-input {
+        background: rgba(255, 255, 255, 0.08);
+        backdrop-filter: blur(20px);
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        border-radius: 12px;
+        padding: 10px 14px;
+        font-size: 16px !important;
+    }
+    
+    .search-btn {
+        width: 36px;
+        height: 36px;
+        border-radius: 10px;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+    }
+    
+    /* Toast notifications for small screens */
+    .search-toast {
+        top: 50px;
+        right: 8px;
+        left: 8px;
+        padding: 10px 16px;
+        border-radius: 12px;
+        font-size: 12px;
+        background: rgba(30, 30, 46, 0.95);
+        backdrop-filter: blur(25px);
+        border: 1px solid rgba(255, 255, 255, 0.15);
     }
 }
 
@@ -2985,5 +3387,379 @@ button, .user-item, .message, .modal-content, .calculator, .toast-error {
     
     .message {
         animation: none;
+    }
+}
+
+/* Ultra-responsive mobile calculator and chat interfaces */
+@media (max-width: 768px) {
+    .calculator {
+        height: 100vh;
+        padding: 0;
+        justify-content: center;
+    }
+    
+    .calculator .calculator-container {
+        width: 95vw;
+        max-width: none;
+        padding: 30px 25px;
+        margin: 20px;
+        border-radius: 28px;
+        box-shadow: 
+            0 20px 40px rgba(0, 0, 0, 0.5),
+            0 0 0 1px rgba(255, 255, 255, 0.08),
+            inset 0 1px 0 rgba(255, 255, 255, 0.12);
+    }
+    
+    .display {
+        padding: 35px 25px;
+        border-radius: 20px;
+        margin-bottom: 25px;
+    }
+    
+    #calc-display {
+        font-size: 2.8rem;
+        min-height: 70px;
+        letter-spacing: 1.5px;
+    }
+    
+    .buttons {
+        gap: 18px;
+    }
+    
+    .calculator button {
+        height: 75px;
+        font-size: 1.7rem;
+        border-radius: 18px;
+        box-shadow: 
+            0 6px 24px rgba(0, 0, 0, 0.35),
+            inset 0 1px 0 rgba(255, 255, 255, 0.12);
+    }
+    
+    .calculator button:active {
+        transform: scale(0.92);
+        transition: transform 0.1s ease;
+    }
+    
+    .auth-trigger {
+        margin-top: 25px;
+        padding: 20px 15px;
+        border-radius: 16px;
+        font-size: 13px;
+    }
+    
+    /* Enhanced mobile chat interface */
+    .chat-app {
+        background: linear-gradient(135deg, #1e1e2e 0%, #2d2d42 100%);
+        height: 100vh;
+        overflow: hidden;
+    }
+    
+    .chat-header {
+        padding: 15px 20px;
+        background: rgba(30, 30, 46, 0.95);
+        backdrop-filter: blur(20px);
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+    }
+    
+    .chat-header h2 {
+        font-size: 1.4rem;
+    }
+    
+    .header-actions {
+        gap: 1rem;
+    }
+    
+    .header-actions span,
+    .header-actions button {
+        font-size: 12px;
+    }
+    
+    #logout-btn {
+        padding: 8px 14px;
+        font-size: 12px;
+    }
+    
+    .chat-container {
+        height: calc(100vh - 70px);
+    }
+    
+    .user-list {
+        background: rgba(30, 30, 46, 0.95);
+        backdrop-filter: blur(20px);
+        padding: 20px;
+    }
+    
+    .user-list-header h3 {
+        font-size: 1.2rem;
+        margin-bottom: 15px;
+    }
+    
+    .chat-search-input {
+        padding: 12px 16px;
+        font-size: 16px; /* Prevent zoom on iOS */
+        border-radius: 16px;
+    }
+    
+    .user-item {
+        padding: 15px;
+        margin-bottom: 8px;
+        border-radius: 16px;
+        background: rgba(255, 255, 255, 0.05);
+        backdrop-filter: blur(10px);
+    }
+    
+    .user-name {
+        font-size: 1rem;
+        font-weight: 600;
+    }
+    
+    .user-last-active {
+        font-size: 0.85rem;
+        margin-top: 4px;
+    }
+    
+    .chat-area {
+        background: rgba(30, 30, 46, 0.9);
+        backdrop-filter: blur(20px);
+    }
+    
+    .chat-messages {
+        padding: 15px;
+        height: calc(100vh - 140px);
+        overflow-y: auto;
+        scroll-behavior: smooth;
+    }
+    
+    .message {
+        margin-bottom: 12px;
+        border-radius: 20px;
+        padding: 12px 16px;
+        backdrop-filter: blur(15px);
+    }
+    
+    .message.sent {
+        background: linear-gradient(135deg, rgba(102, 126, 234, 0.8) 0%, rgba(175, 82, 222, 0.7) 100%);
+        margin-left: 20px;
+    }
+    
+    .message.received {
+        background: rgba(255, 255, 255, 0.1);
+        margin-right: 20px;
+    }
+    
+    .message-input-container {
+        padding: 15px 20px;
+        background: rgba(30, 30, 46, 0.95);
+        backdrop-filter: blur(20px);
+        border-top: 1px solid rgba(255, 255, 255, 0.1);
+        display: flex;
+        gap: 12px;
+        align-items: center;
+    }
+    
+    #message-input {
+        flex: 1;
+        padding: 14px 18px;
+        font-size: 16px; /* Prevent zoom on iOS */
+        border-radius: 25px;
+        background: rgba(255, 255, 255, 0.1);
+        backdrop-filter: blur(10px);
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        color: #ffffff;
+    }
+    
+    #send-btn {
+        padding: 14px 20px;
+        border-radius: 25px;
+        background: linear-gradient(135deg, rgba(102, 126, 234, 0.9) 0%, rgba(175, 82, 222, 0.8) 100%);
+        color: #ffffff;
+        font-weight: 600;
+        box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
+    }
+}
+
+@media (max-width: 480px) {
+    .calculator .calculator-container {
+        width: 98vw;
+        padding: 25px 20px;
+        margin: 10px;
+        border-radius: 24px;
+    }
+    
+    .display {
+        padding: 30px 20px;
+        border-radius: 18px;
+        margin-bottom: 20px;
+    }
+    
+    #calc-display {
+        font-size: 2.4rem;
+        min-height: 60px;
+        letter-spacing: 1px;
+    }
+    
+    .buttons {
+        gap: 15px;
+    }
+    
+    .calculator button {
+        height: 70px;
+        font-size: 1.6rem;
+        border-radius: 16px;
+        font-weight: 500;
+    }
+    
+    .btn-equals {
+        font-size: 1.8rem;
+    }
+    
+    .auth-trigger {
+        margin-top: 20px;
+        padding: 18px 12px;
+        border-radius: 14px;
+        font-size: 12px;
+    }
+    
+    .auth-trigger span {
+        padding: 6px 10px;
+        border-radius: 10px;
+    }
+    
+    .auth-trigger small {
+        font-size: 11px;
+        margin-top: 10px;
+    }
+    
+    /* Enhanced small screen chat */
+    .chat-header {
+        padding: 12px 15px;
+    }
+    
+    .chat-header h2 {
+        font-size: 1.2rem;
+    }
+    
+    .header-actions {
+        gap: 0.8rem;
+    }
+    
+    #logout-btn {
+        padding: 6px 12px;
+        font-size: 11px;
+    }
+    
+    .user-list {
+        padding: 15px;
+    }
+    
+    .chat-search-input {
+        padding: 10px 14px;
+        border-radius: 14px;
+    }
+    
+    .user-item {
+        padding: 12px;
+        border-radius: 14px;
+    }
+    
+    .chat-messages {
+        padding: 12px;
+        height: calc(100vh - 130px);
+    }
+    
+    .message {
+        padding: 10px 14px;
+        border-radius: 18px;
+        margin-bottom: 10px;
+    }
+    
+    .message.sent {
+        margin-left: 15px;
+    }
+    
+    .message.received {
+        margin-right: 15px;
+    }
+    
+    .message-input-container {
+        padding: 12px 15px;
+        gap: 10px;
+    }
+    
+    #message-input {
+        padding: 12px 16px;
+        border-radius: 20px;
+    }
+    
+    #send-btn {
+        padding: 12px 18px;
+        border-radius: 20px;
+    }
+}
+
+@media (max-width: 360px) {
+    .calculator .calculator-container {
+        padding: 20px 15px;
+        margin: 5px;
+    }
+    
+    .display {
+        padding: 25px 15px;
+    }
+    
+    #calc-display {
+        font-size: 2.2rem;
+        min-height: 55px;
+    }
+    
+    .buttons {
+        gap: 12px;
+    }
+    
+    .calculator button {
+        height: 65px;
+        font-size: 1.5rem;
+        border-radius: 14px;
+    }
+    
+    /* Ultra-compact chat for very small screens */
+    .chat-header {
+        padding: 10px 12px;
+    }
+    
+    .chat-header h2 {
+        font-size: 1.1rem;
+    }
+    
+    .user-list {
+        padding: 12px;
+    }
+    
+    .chat-messages {
+        padding: 10px;
+        height: calc(100vh - 120px);
+    }
+    
+    .message {
+        padding: 8px 12px;
+        border-radius: 16px;
+        font-size: 0.9rem;
+    }
+    
+    .message-input-container {
+        padding: 10px 12px;
+        gap: 8px;
+    }
+    
+    #message-input {
+        padding: 10px 14px;
+        border-radius: 18px;
+        font-size: 14px;
+    }
+    
+    #send-btn {
+        padding: 10px 16px;
+        border-radius: 18px;
+        font-size: 13px;
     }
 }
