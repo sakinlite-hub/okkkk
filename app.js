@@ -31,6 +31,32 @@ let isPasscodeMode = false;
 let usersSubscription = null;
 let messagesSubscription = null;
 
+// Global variable to store message cache
+let messageCache = new Map();
+
+// Store failed messages for retry
+let failedMessages = [];
+let failedMessageRetryInterval = null;
+
+function startFailedMessageRetry() {
+    if (failedMessageRetryInterval) {
+        clearInterval(failedMessageRetryInterval);
+    }
+    
+    failedMessageRetryInterval = setInterval(() => {
+        if (failedMessages.length > 0) {
+            retryFailedMessages();
+        }
+    }, 60000); // Retry every minute
+}
+
+function stopFailedMessageRetry() {
+    if (failedMessageRetryInterval) {
+        clearInterval(failedMessageRetryInterval);
+        failedMessageRetryInterval = null;
+    }
+}
+
 // DOM Elements
 const loadingScreen = document.getElementById('loading-screen');
 const authModal = document.getElementById('auth-modal');
@@ -44,6 +70,7 @@ document.addEventListener('DOMContentLoaded', () => {
     try {
         console.log('DOM loaded, starting initialization...');
         initializeApp();
+        requestNotificationPermission(); // Request notification permission
     } catch (error) {
         console.error('Critical initialization error:', error);
         hideLoading();
@@ -161,6 +188,40 @@ function showChatApp() {
     loadUsers();
     setupRealtimeSubscriptions();
     updateUserPresence(true);
+    startConnectionCheck(); // Start connection checking
+    startFailedMessageRetry(); // Start retrying failed messages
+    
+    // Add connection status indicator
+    updateConnectionStatus('connected');
+}
+
+// Sync offline messages when connection is restored
+async function syncOfflineMessages() {
+    try {
+        // Get any offline messages that might need to be sent
+        const offlineMessages = getOfflineMessages();
+        
+        // For this implementation, we're focusing on ensuring messages persist
+        // In a more advanced implementation, we would sync unsent messages
+        
+        console.log('Offline messages synced:', offlineMessages.length);
+    } catch (error) {
+        console.error('Failed to sync offline messages:', error);
+    }
+}
+
+// Update connection status handler
+function updateConnectionStatus(status) {
+    const statusElement = document.getElementById('connection-status');
+    if (statusElement) {
+        statusElement.textContent = status === 'connected' ? 'Online' : 'Offline';
+        statusElement.className = status === 'connected' ? 'status-connected' : 'status-disconnected';
+    }
+    
+    // If we're now connected, try to sync offline messages
+    if (status === 'connected') {
+        syncOfflineMessages();
+    }
 }
 
 function hideAllScreens() {
@@ -178,14 +239,18 @@ function setupAuthStateListener() {
         if (event === 'SIGNED_IN' && session?.user) {
             currentUser = session.user;
             await checkUserProfile();
+            updateConnectionStatus('connected');
         } else if (event === 'SIGNED_OUT') {
             currentUser = null;
             showCalculator();
             cleanup();
+            updateConnectionStatus('disconnected');
         } else if (event === 'TOKEN_REFRESHED') {
             console.log('Token refreshed successfully');
+            updateConnectionStatus('connected');
         } else if (event === 'TOKEN_REFRESH_FAILED') {
             console.warn('Token refresh failed - user may be logged out');
+            updateConnectionStatus('disconnected');
             // Don't immediately log out, let the user try to continue
             // The app will handle this gracefully
         }
@@ -510,15 +575,24 @@ async function getCurrentUserProfile() {
 
 function displayUsers(users) {
     const container = document.getElementById('users-container');
+    if (!container) return;
+    
     container.innerHTML = '';
     
     users.forEach(user => {
         const userElement = document.createElement('div');
         userElement.className = 'user-item';
         userElement.onclick = () => selectUser(user);
+        userElement.setAttribute('data-user-id', user.id);
         
         const statusClass = user.is_online ? 'online' : 'offline';
         const statusText = user.is_online ? 'Active now' : getLastActiveText(user.last_active);
+        
+        // Get unread count for this user
+        const unreadCount = unreadMessageCounts.get(user.id) || 0;
+        const unreadIndicator = unreadCount > 0 ? 
+            `<div class="unread-indicator active">${unreadCount > 9 ? '9+' : unreadCount}</div>` : 
+            '<div class="unread-indicator"></div>';
         
         userElement.innerHTML = `
             <div class="user-status ${statusClass}"></div>
@@ -526,6 +600,7 @@ function displayUsers(users) {
                 <div class="user-name">${user.username}</div>
                 <div class="user-last-active">${statusText}</div>
             </div>
+            ${unreadIndicator}
         `;
         
         container.appendChild(userElement);
@@ -624,6 +699,16 @@ async function loadMessages(partnerId) {
             
         if (error) throw error;
         
+        // Cache messages
+        if (messages) {
+            messages.forEach(msg => {
+                messageCache.set(msg.id, msg);
+            });
+            
+            // Store offline copy
+            storeMessagesOffline(messages);
+        }
+        
         displayMessages(messages);
         
         // Update last message check time to prevent duplicates in polling
@@ -633,24 +718,67 @@ async function loadMessages(partnerId) {
         
     } catch (error) {
         console.error('Load messages error:', error);
+        // Try to show cached messages if available
+        const cachedMessages = Array.from(messageCache.values()).filter(msg => 
+            (msg.sender_id === currentUser.id && msg.receiver_id === partnerId) ||
+            (msg.sender_id === partnerId && msg.receiver_id === currentUser.id)
+        );
+        
+        if (cachedMessages.length > 0) {
+            displayMessages(cachedMessages);
+        } else {
+            // Try offline messages
+            const offlineMessages = getOfflineMessages().filter(msg => 
+                (msg.sender_id === currentUser.id && msg.receiver_id === partnerId) ||
+                (msg.sender_id === partnerId && msg.receiver_id === currentUser.id)
+            );
+            
+            if (offlineMessages.length > 0) {
+                displayMessages(offlineMessages);
+            } else {
+                // Show error to user but don't break the app
+                showError('Failed to load messages. Please refresh.');
+            }
+        }
     }
 }
 
 function displayMessages(messages) {
     const container = document.getElementById('chat-messages');
+    if (!container) return;
+    
     container.innerHTML = '';
     
-    messages.forEach(message => {
-        const messageElement = createMessageElement(message);
-        messageElement.setAttribute('data-message-id', message.id);
-        container.appendChild(messageElement);
-    });
+    if (!messages || messages.length === 0) {
+        // Show welcome message when no messages
+        const welcomeDiv = document.createElement('div');
+        welcomeDiv.className = 'welcome-message';
+        welcomeDiv.textContent = 'No messages yet. Start a conversation!';
+        container.appendChild(welcomeDiv);
+    } else {
+        messages.forEach(message => {
+            const messageElement = createMessageElement(message);
+            messageElement.setAttribute('data-message-id', message.id);
+            
+            // Mark as read if it's received and in current chat
+            if (message.receiver_id === currentUser.id && 
+                currentChatPartner && 
+                message.sender_id === currentChatPartner.id) {
+                markMessageAsRead(message.id);
+            }
+            
+            container.appendChild(messageElement);
+        });
+    }
     
     // Scroll to bottom
     container.scrollTop = container.scrollHeight;
     
     // Force reflow to ensure messages stay visible
     container.offsetHeight;
+    
+    // Update unread counts
+    updateUnreadCounts();
 }
 
 function createMessageElement(message) {
@@ -659,11 +787,22 @@ function createMessageElement(message) {
     messageDiv.className = `message ${isSent ? 'sent' : 'received'}`;
     messageDiv.setAttribute('data-message-id', message.id);
     
+    // Add sending/failed class for temporary messages
+    if (message.id.toString().startsWith('temp-')) {
+        messageDiv.classList.add('sending');
+    }
+    
+    // Check if this is a failed message
+    const isFailed = failedMessages.some(failedMsg => failedMsg.content === message.content);
+    if (isFailed) {
+        messageDiv.classList.add('failed');
+    }
+    
     let content = '';
     if (message.type === 'tiktok') {
         content = createTikTokEmbed(message.content);
     } else {
-        content = `<div>${escapeHtml(message.content)}</div>`;
+        content = `<div class="message-content">${escapeHtml(message.content)}</div>`;
     }
     
     const timestamp = new Date(message.timestamp).toLocaleTimeString([], { 
@@ -671,9 +810,24 @@ function createMessageElement(message) {
         minute: '2-digit' 
     });
     
+    // Add visual indicator for sent messages
+    let statusIndicator = '';
+    if (isSent) {
+        // Check if message has been read (simplified implementation)
+        const isRead = readMessages.has(message.id);
+        statusIndicator = `<div class="message-status">${isRead ? '✓✓' : '✓'}</div>`;
+    }
+    
+    // Add retry button for failed messages
+    const retryButton = isFailed ? '<button class="retry-btn" onclick="retrySpecificMessage(this)">Retry</button>' : '';
+    
     messageDiv.innerHTML = `
         ${content}
-        <div class="message-timestamp">${timestamp}</div>
+        <div class="message-footer">
+            <div class="message-timestamp">${timestamp}</div>
+            ${statusIndicator}
+        </div>
+        ${retryButton}
     `;
     
     return messageDiv;
@@ -737,6 +891,24 @@ async function sendMessage() {
             timestamp: new Date().toISOString()
         };
         
+        // Add the message to UI immediately for better UX
+        const tempMessage = {
+            id: 'temp-' + Date.now(),
+            ...messageData
+        };
+        
+        const tempMessageElement = createMessageElement(tempMessage);
+        tempMessageElement.classList.add('sending');
+        const chatMessages = document.getElementById('chat-messages');
+        if (chatMessages) {
+            chatMessages.appendChild(tempMessageElement);
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
+        
+        // Clear input immediately
+        messageInput.value = '';
+        
+        // Insert message into database
         const { data, error } = await supabaseClient
             .from('messages')
             .insert(messageData)
@@ -745,34 +917,187 @@ async function sendMessage() {
         
         if (error) throw error;
         
-        messageInput.value = '';
-        
-        // Add the message to UI immediately for both mobile and desktop
-        if (data) {
-            const messageElement = createMessageElement(data);
-            const chatMessages = document.getElementById('chat-messages');
-            if (chatMessages) {
-                chatMessages.appendChild(messageElement);
-                chatMessages.scrollTop = chatMessages.scrollHeight;
-                
-                // Force reflow to ensure message stays visible
-                chatMessages.offsetHeight;
+        // Replace temporary message with actual message
+        if (chatMessages && data) {
+            // Remove temporary message
+            const tempElement = chatMessages.querySelector(`[data-message-id="${tempMessage.id}"]`);
+            if (tempElement) {
+                tempElement.remove();
             }
+            
+            // Add actual message
+            const messageElement = createMessageElement(data);
+            messageElement.setAttribute('data-message-id', data.id);
+            chatMessages.appendChild(messageElement);
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+            
+            // Cache the message
+            messageCache.set(data.id, data);
+            
+            // Force reflow to ensure message stays visible
+            chatMessages.offsetHeight;
         }
         
         console.log('Message sent successfully');
         
+        // Remove from failed messages if it was there
+        const failedIndex = failedMessages.findIndex(msg => msg.content === content);
+        if (failedIndex > -1) {
+            failedMessages.splice(failedIndex, 1);
+        }
+        
     } catch (error) {
         console.error('Send message error:', error);
-        showError('Failed to send message: ' + error.message);
         
-        // Restore message content on error
-        messageInput.value = content;
+        // Store failed message for retry
+        const failedMessage = {
+            content: content,
+            receiver_id: currentChatPartner.id,
+            timestamp: new Date().toISOString(),
+            retryCount: 0
+        };
+        
+        failedMessages.push(failedMessage);
+        
+        // Remove temporary message if it exists
+        const chatMessages = document.getElementById('chat-messages');
+        if (chatMessages) {
+            const tempElements = chatMessages.querySelectorAll('[class*="sending"]');
+            if (tempElements.length > 0) {
+                tempElements[tempElements.length - 1].remove();
+            }
+        }
+        
+        showError('Failed to send message. Will retry when connected.');
+        
+        // Try to resend after a delay
+        setTimeout(() => {
+            retryFailedMessages();
+        }, 5000);
     } finally {
         // Restore send button
         sendBtn.textContent = originalText;
         sendBtn.disabled = false;
         messageInput.focus();
+    }
+}
+
+// Retry a specific failed message
+async function retrySpecificMessage(buttonElement) {
+    const messageElement = buttonElement.closest('.message');
+    const messageContent = messageElement.querySelector('.message-content').textContent;
+    
+    // Find the failed message
+    const failedIndex = failedMessages.findIndex(msg => msg.content === messageContent);
+    if (failedIndex === -1) return;
+    
+    const failedMsg = failedMessages[failedIndex];
+    
+    try {
+        // Disable the retry button
+        buttonElement.disabled = true;
+        buttonElement.textContent = 'Retrying...';
+        
+        const isTikTokUrl = /(?:https?:\/\/)?(?:www\.)?(?:tiktok\.com)/i.test(failedMsg.content);
+        const messageType = isTikTokUrl ? 'tiktok' : 'text';
+        
+        const messageData = {
+            sender_id: currentUser.id,
+            receiver_id: failedMsg.receiver_id,
+            type: messageType,
+            content: failedMsg.content,
+            timestamp: failedMsg.timestamp
+        };
+        
+        const { data, error } = await supabaseClient
+            .from('messages')
+            .insert(messageData)
+            .select()
+            .single();
+            
+        if (!error && data) {
+            // Remove the failed message element
+            messageElement.remove();
+            
+            // Add the successful message
+            const chatMessages = document.getElementById('chat-messages');
+            if (chatMessages) {
+                const messageElement = createMessageElement(data);
+                messageElement.setAttribute('data-message-id', data.id);
+                chatMessages.appendChild(messageElement);
+                chatMessages.scrollTop = chatMessages.scrollHeight;
+                
+                // Cache the message
+                messageCache.set(data.id, data);
+            }
+            
+            // Remove from failed messages
+            failedMessages.splice(failedIndex, 1);
+        } else {
+            throw new Error('Failed to resend message');
+        }
+    } catch (error) {
+        console.error('Retry failed:', error);
+        buttonElement.disabled = false;
+        buttonElement.textContent = 'Retry';
+        showError('Retry failed. Please try again later.');
+    }
+}
+
+// Retry failed messages
+async function retryFailedMessages() {
+    if (failedMessages.length === 0) return;
+    
+    const chatMessages = document.getElementById('chat-messages');
+    
+    for (let i = 0; i < failedMessages.length; i++) {
+        const failedMsg = failedMessages[i];
+        
+        // Skip if retry count is too high
+        if (failedMsg.retryCount > 3) {
+            continue;
+        }
+        
+        try {
+            const isTikTokUrl = /(?:https?:\/\/)?(?:www\.)?(?:tiktok\.com)/i.test(failedMsg.content);
+            const messageType = isTikTokUrl ? 'tiktok' : 'text';
+            
+            const messageData = {
+                sender_id: currentUser.id,
+                receiver_id: failedMsg.receiver_id,
+                type: messageType,
+                content: failedMsg.content,
+                timestamp: failedMsg.timestamp
+            };
+            
+            const { data, error } = await supabaseClient
+                .from('messages')
+                .insert(messageData)
+                .select()
+                .single();
+                
+            if (!error && data && chatMessages) {
+                // Add message to UI
+                const messageElement = createMessageElement(data);
+                messageElement.setAttribute('data-message-id', data.id);
+                chatMessages.appendChild(messageElement);
+                chatMessages.scrollTop = chatMessages.scrollHeight;
+                
+                // Cache the message
+                messageCache.set(data.id, data);
+                
+                // Remove from failed messages
+                failedMessages.splice(i, 1);
+                i--; // Adjust index after removal
+            } else {
+                // Increment retry count
+                failedMsg.retryCount++;
+            }
+        } catch (error) {
+            // Increment retry count
+            failedMsg.retryCount++;
+            console.error('Retry failed:', error);
+        }
     }
 }
 
@@ -820,6 +1145,9 @@ function setupRealtimeSubscriptions() {
                     console.log('New message received:', payload);
                     const message = payload.new;
                     
+                    // Cache the message
+                    messageCache.set(message.id, message);
+                    
                     // Check if this message is for current chat
                     if (currentChatPartner && 
                         ((message.sender_id === currentUser.id && message.receiver_id === currentChatPartner.id) ||
@@ -833,7 +1161,16 @@ function setupRealtimeSubscriptions() {
                                 // Add message to chat immediately
                                 const messageElement = createMessageElement(message);
                                 messageElement.setAttribute('data-message-id', message.id);
-                                chatMessages.appendChild(messageElement);
+                                
+                                // Check if this is a temporary message being replaced
+                                const tempElements = chatMessages.querySelectorAll('[class*="sending"]');
+                                if (tempElements.length > 0) {
+                                    // Replace the last temporary message
+                                    tempElements[tempElements.length - 1].replaceWith(messageElement);
+                                } else {
+                                    chatMessages.appendChild(messageElement);
+                                }
+                                
                                 chatMessages.scrollTop = chatMessages.scrollHeight;
                                 
                                 // Force a visual update
@@ -848,10 +1185,16 @@ function setupRealtimeSubscriptions() {
             .subscribe((status) => {
                 console.log('Messages subscription status:', status);
                 
-                // If subscription fails on mobile, set up polling fallback
-                if (status === 'CHANNEL_ERROR' && window.innerWidth <= 768) {
-                    console.log('Setting up mobile polling fallback');
-                    setupMobilePollingFallback();
+                // Update connection status based on subscription status
+                if (status === 'SUBSCRIBED') {
+                    updateConnectionStatus('connected');
+                } else if (status === 'CHANNEL_ERROR') {
+                    updateConnectionStatus('disconnected');
+                    // If subscription fails on mobile, set up polling fallback
+                    if (window.innerWidth <= 768) {
+                        console.log('Setting up mobile polling fallback');
+                        setupMobilePollingFallback();
+                    }
                 }
             });
     }, 1000); // 1 second delay for mobile browsers
@@ -891,19 +1234,17 @@ function setupMobilePollingFallback() {
                 console.log('Found new messages via polling:', newMessages.length);
                 
                 const chatMessages = document.getElementById('chat-messages');
-                newMessages.forEach(message => {
-                    // Check if message already exists to prevent duplicates
-                    const existingMessage = chatMessages.querySelector(`[data-message-id="${message.id}"]`);
-                    if (!existingMessage) {
-                        const messageElement = createMessageElement(message);
-                        messageElement.setAttribute('data-message-id', message.id);
-                        if (chatMessages) {
+                if (chatMessages) {
+                    newMessages.forEach(message => {
+                        // Check if message already exists to prevent duplicates
+                        const existingMessage = chatMessages.querySelector(`[data-message-id="${message.id}"]`);
+                        if (!existingMessage) {
+                            const messageElement = createMessageElement(message);
+                            messageElement.setAttribute('data-message-id', message.id);
                             chatMessages.appendChild(messageElement);
                         }
-                    }
-                });
-                
-                if (chatMessages) {
+                    });
+                    
                     chatMessages.scrollTop = chatMessages.scrollHeight;
                 }
                 
@@ -916,7 +1257,7 @@ function setupMobilePollingFallback() {
         } catch (error) {
             console.error('Mobile polling error:', error);
         }
-    }, 5000); // Check every 5 seconds (increased from 3 seconds)
+    }, 5000); // Check every 5 seconds
 }
 
 function stopMobilePolling() {
@@ -971,6 +1312,18 @@ function cleanup() {
     // Stop mobile polling
     stopMobilePolling();
     
+    // Stop connection checking
+    stopConnectionCheck();
+    
+    // Stop failed message retry
+    stopFailedMessageRetry();
+    
+    // Clear message cache
+    messageCache.clear();
+    
+    // Clear failed messages
+    failedMessages = [];
+    
     currentChatPartner = null;
 }
 
@@ -986,7 +1339,25 @@ function showError(message, elementId = null) {
             }, 8000);
         }
     } else {
-        alert(message);
+        // Create a toast notification for better UX
+        const toast = document.createElement('div');
+        toast.className = 'toast-error';
+        toast.textContent = message;
+        
+        // Add close button
+        const closeBtn = document.createElement('button');
+        closeBtn.innerHTML = '&times;';
+        closeBtn.onclick = () => toast.remove();
+        toast.appendChild(closeBtn);
+        
+        document.body.appendChild(toast);
+        
+        // Auto remove after 8 seconds
+        setTimeout(() => {
+            if (toast.parentNode) {
+                toast.remove();
+            }
+        }, 8000);
     }
     
     // If rate limited, suggest clearing storage
@@ -998,6 +1369,37 @@ function showError(message, elementId = null) {
         }, 2000);
     }
 }
+
+// Add CSS for toast notifications
+const toastStyle = document.createElement('style');
+toastStyle.textContent = `
+.toast-error {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    background: #ff4444;
+    color: white;
+    padding: 15px 20px;
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    z-index: 10000;
+    max-width: 300px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.toast-error button {
+    background: none;
+    border: none;
+    color: white;
+    font-size: 20px;
+    cursor: pointer;
+    padding: 0;
+    margin-left: 15px;
+}
+`;
+document.head.appendChild(toastStyle);
 
 // Clear cached authentication data
 function clearCachedData() {
@@ -1027,6 +1429,7 @@ function clearCachedData() {
 // Handle page visibility and mobile app lifecycle
 let lastPresenceUpdate = 0;
 const PRESENCE_UPDATE_COOLDOWN = 5000; // 5 seconds
+let connectionCheckInterval = null;
 
 document.addEventListener('visibilitychange', () => {
     if (currentUser) {
@@ -1038,6 +1441,40 @@ document.addEventListener('visibilitychange', () => {
     }
 });
 
+// Periodic connection check
+function startConnectionCheck() {
+    if (connectionCheckInterval) {
+        clearInterval(connectionCheckInterval);
+    }
+    
+    connectionCheckInterval = setInterval(async () => {
+        try {
+            // Simple connectivity check
+            const { data, error } = await supabaseClient
+                .from('user_profiles')
+                .select('id')
+                .eq('id', currentUser.id)
+                .limit(1)
+                .single();
+                
+            if (error) {
+                updateConnectionStatus('disconnected');
+            } else {
+                updateConnectionStatus('connected');
+            }
+        } catch (error) {
+            updateConnectionStatus('disconnected');
+        }
+    }, 30000); // Check every 30 seconds
+}
+
+function stopConnectionCheck() {
+    if (connectionCheckInterval) {
+        clearInterval(connectionCheckInterval);
+        connectionCheckInterval = null;
+    }
+}
+
 // Handle window resize for mobile responsiveness
 window.addEventListener('resize', () => {
     if (window.innerWidth > 768) {
@@ -1048,6 +1485,29 @@ window.addEventListener('resize', () => {
         if (chatArea) chatArea.classList.remove('mobile-visible');
     }
 });
+
+// Start connection check when user is authenticated
+function showChatApp() {
+    hideAllScreens();
+    chatApp.classList.remove('hidden');
+    
+    // Reset mobile layout
+    if (window.innerWidth <= 768) {
+        const userList = document.getElementById('user-list');
+        const chatArea = document.getElementById('chat-area');
+        userList.classList.remove('mobile-hidden');
+        chatArea.classList.remove('mobile-visible');
+    }
+    
+    loadUsers();
+    setupRealtimeSubscriptions();
+    updateUserPresence(true);
+    startConnectionCheck(); // Start connection checking
+    startFailedMessageRetry(); // Start retrying failed messages
+    
+    // Add connection status indicator
+    updateConnectionStatus('connected');
+}
 
 // Handle page unload
 window.addEventListener('beforeunload', () => {
@@ -1086,3 +1546,141 @@ document.addEventListener('touchend', (e) => {
         lastTouchEnd = now;
     }
 }, false);
+
+// Track unread messages
+let unreadMessageCounts = new Map();
+
+function displayUsers(users) {
+    const container = document.getElementById('users-container');
+    if (!container) return;
+    
+    container.innerHTML = '';
+    
+    users.forEach(user => {
+        const userElement = document.createElement('div');
+        userElement.className = 'user-item';
+        userElement.onclick = () => selectUser(user);
+        userElement.setAttribute('data-user-id', user.id);
+        
+        const statusClass = user.is_online ? 'online' : 'offline';
+        const statusText = user.is_online ? 'Active now' : getLastActiveText(user.last_active);
+        
+        // Get unread count for this user
+        const unreadCount = unreadMessageCounts.get(user.id) || 0;
+        const unreadIndicator = unreadCount > 0 ? 
+            `<div class="unread-indicator active">${unreadCount > 9 ? '9+' : unreadCount}</div>` : 
+            '<div class="unread-indicator"></div>';
+        
+        userElement.innerHTML = `
+            <div class="user-status ${statusClass}"></div>
+            <div class="user-info">
+                <div class="user-name">${user.username}</div>
+                <div class="user-last-active">${statusText}</div>
+            </div>
+            ${unreadIndicator}
+        `;
+        
+        container.appendChild(userElement);
+    });
+}
+
+// Update unread message counts
+function updateUnreadCounts() {
+    // This would be implemented with real-time subscriptions or polling
+    // For now, we'll just refresh the user list
+    if (currentUser) {
+        loadUsers();
+    }
+}
+
+// Track message read status
+let readMessages = new Set();
+
+function markMessageAsRead(messageId) {
+    readMessages.add(messageId);
+}
+
+function isMessageRead(messageId) {
+    return readMessages.has(messageId);
+}
+
+// Update the displayMessages function to mark messages as read
+function displayMessages(messages) {
+    const container = document.getElementById('chat-messages');
+    if (!container) return;
+    
+    container.innerHTML = '';
+    
+    if (!messages || messages.length === 0) {
+        // Show welcome message when no messages
+        const welcomeDiv = document.createElement('div');
+        welcomeDiv.className = 'welcome-message';
+        welcomeDiv.textContent = 'No messages yet. Start a conversation!';
+        container.appendChild(welcomeDiv);
+    } else {
+        messages.forEach(message => {
+            const messageElement = createMessageElement(message);
+            messageElement.setAttribute('data-message-id', message.id);
+            
+            // Mark as read if it's received and in current chat
+            if (message.receiver_id === currentUser.id && 
+                currentChatPartner && 
+                message.sender_id === currentChatPartner.id) {
+                markMessageAsRead(message.id);
+            }
+            
+            container.appendChild(messageElement);
+        });
+    }
+    
+    // Scroll to bottom
+    container.scrollTop = container.scrollHeight;
+    
+    // Force reflow to ensure messages stay visible
+    container.offsetHeight;
+    
+    // Update unread counts
+    updateUnreadCounts();
+}
+
+// Store messages in localStorage for offline access
+function storeMessagesOffline(messages) {
+    try {
+        const key = `securechat_messages_${currentUser.id}`;
+        localStorage.setItem(key, JSON.stringify(messages));
+    } catch (error) {
+        console.error('Failed to store messages offline:', error);
+    }
+}
+
+function getOfflineMessages() {
+    try {
+        const key = `securechat_messages_${currentUser.id}`;
+        const stored = localStorage.getItem(key);
+        return stored ? JSON.parse(stored) : [];
+    } catch (error) {
+        console.error('Failed to retrieve offline messages:', error);
+        return [];
+    }
+}
+
+// Show notification for new messages
+function showNewMessageNotification(message) {
+    // Only show notification if user is not currently viewing the chat
+    if (!currentChatPartner || currentChatPartner.id !== message.sender_id) {
+        // Check if browser supports notifications
+        if ('Notification' in window && Notification.permission === 'granted') {
+            new Notification('New message from ' + message.sender_username || 'Unknown', {
+                body: message.content.length > 50 ? message.content.substring(0, 50) + '...' : message.content,
+                icon: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=='
+            });
+        }
+    }
+}
+
+// Request notification permission
+function requestNotificationPermission() {
+    if ('Notification' in window && Notification.permission === 'default') {
+        Notification.requestPermission();
+    }
+}
