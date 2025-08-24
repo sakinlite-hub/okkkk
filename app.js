@@ -1,4 +1,5 @@
 // Supabase Configuration
+console.log('🚀 SecureChat app starting...');
 const SUPABASE_URL = 'https://kujjgcuoapvkjhcqplpc.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt1ampnY3VvYXB2a2poY3FwbHBjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTYwNDY4MzAsImV4cCI6MjA3MTYyMjgzMH0.EvkhwlbaNQA3VQWKvvBcGR4caKYkIYO4ZOqfgXZU7Ps';
 
@@ -38,52 +39,63 @@ const calculator = document.getElementById('calculator');
 const chatApp = document.getElementById('chat-app');
 const calcDisplay = document.getElementById('calc-display');
 
-// Initialize App
-document.addEventListener('DOMContentLoaded', initializeApp);
+// Initialize App with error boundary
+document.addEventListener('DOMContentLoaded', () => {
+    try {
+        console.log('DOM loaded, starting initialization...');
+        initializeApp();
+    } catch (error) {
+        console.error('Critical initialization error:', error);
+        hideLoading();
+        showCalculator();
+    }
+});
+
+// Global error handler to prevent infinite loading
+window.addEventListener('error', (error) => {
+    console.error('Global error caught:', error);
+    hideLoading();
+});
+
+// Handle unhandled promise rejections
+window.addEventListener('unhandledrejection', (event) => {
+    console.error('Unhandled promise rejection:', event.reason);
+    hideLoading();
+});
 
 async function initializeApp() {
+    console.log('Initializing app...');
+    
+    // Set a maximum initialization timeout
+    const initTimeout = setTimeout(() => {
+        console.error('Initialization timeout - forcing show calculator');
+        hideLoading();
+        showCalculator();
+    }, 10000); // 10 second timeout
+    
     try {
-        console.log('Initializing app...');
+        // Simple session check without complex retry logic
+        const { data: { session }, error } = await supabaseClient.auth.getSession();
         
-        // Add delay to prevent rapid initialization
-        await new Promise(resolve => setTimeout(resolve, 500));
-        
-        // Check for existing session with retry logic
-        let session = null;
-        let retries = 0;
-        const maxRetries = 3;
-        
-        while (retries < maxRetries) {
-            try {
-                const { data: { session: currentSession }, error } = await supabaseClient.auth.getSession();
-                
-                if (error) {
-                    if (error.message.includes('429') || error.message.includes('Too Many Requests')) {
-                        console.warn('Rate limited, waiting before retry...');
-                        await new Promise(resolve => setTimeout(resolve, 2000 * (retries + 1)));
-                        retries++;
-                        continue;
-                    }
-                    throw error;
-                }
-                
-                session = currentSession;
-                break;
-            } catch (error) {
-                console.error('Session error attempt', retries + 1, ':', error);
-                retries++;
-                if (retries >= maxRetries) {
-                    console.error('Max retries reached, proceeding without session');
-                    break;
-                }
-                await new Promise(resolve => setTimeout(resolve, 1000 * retries));
-            }
+        if (error) {
+            console.error('Session error:', error);
+            clearTimeout(initTimeout);
+            hideLoading();
+            showCalculator();
+            return;
         }
 
         if (session?.user) {
             currentUser = session.user;
             console.log('User found:', currentUser.email);
-            await checkUserProfile();
+            
+            // Simple profile check
+            try {
+                await checkUserProfile();
+            } catch (profileError) {
+                console.error('Profile check failed:', profileError);
+                showCalculator();
+            }
         } else {
             console.log('No active session found');
             showCalculator();
@@ -97,13 +109,24 @@ async function initializeApp() {
         console.error('App initialization error:', error);
         showCalculator();
     } finally {
+        clearTimeout(initTimeout);
         hideLoading();
     }
 }
 
 function hideLoading() {
-    loadingScreen.style.display = 'none';
+    const loadingScreen = document.getElementById('loading-screen');
+    if (loadingScreen) {
+        loadingScreen.style.display = 'none';
+        console.log('Loading screen hidden');
+    }
 }
+
+// Fallback to hide loading after maximum time
+setTimeout(() => {
+    hideLoading();
+    console.log('Emergency loading screen hide after 15 seconds');
+}, 15000);
 
 function showCalculator() {
     hideAllScreens();
@@ -173,9 +196,6 @@ async function checkUserProfile() {
     try {
         console.log('Checking user profile for:', currentUser.email);
         
-        // Add delay to prevent rapid API calls
-        await new Promise(resolve => setTimeout(resolve, 200));
-        
         const { data: profile, error } = await supabaseClient
             .from('user_profiles')
             .select('*')
@@ -186,21 +206,14 @@ async function checkUserProfile() {
             // Check if it's a 406 error (table doesn't exist)
             if (error.code === 'PGRST106' || error.message.includes('406')) {
                 showError('Database not set up. Please run the SQL schema in your Supabase dashboard first.');
+                showCalculator();
                 return;
-            }
-            // Check for rate limiting
-            if (error.message.includes('429') || error.message.includes('Too Many Requests')) {
-                console.warn('Rate limited on profile check, retrying...');
-                await new Promise(resolve => setTimeout(resolve, 3000));
-                return checkUserProfile(); // Retry once
             }
             throw error;
         }
 
         if (!profile) {
             console.log('Creating new profile for user');
-            // Create new profile with delay
-            await new Promise(resolve => setTimeout(resolve, 300));
             
             const { error: insertError } = await supabaseClient
                 .from('user_profiles')
@@ -215,6 +228,7 @@ async function checkUserProfile() {
             if (insertError) {
                 if (insertError.code === 'PGRST106' || insertError.message.includes('406')) {
                     showError('Database not set up. Please run the SQL schema in your Supabase dashboard first.');
+                    showCalculator();
                     return;
                 }
                 throw insertError;
@@ -236,11 +250,10 @@ async function checkUserProfile() {
         console.error('Profile check error:', error);
         if (error.message.includes('406') || error.code === 'PGRST106') {
             showError('Database not set up. Please run the SQL schema in your Supabase dashboard first.');
-        } else if (error.message.includes('429')) {
-            showError('Rate limited. Please wait a moment and refresh the page.');
         } else {
             showError('Failed to load user profile: ' + error.message);
         }
+        showCalculator();
     }
 }
 
@@ -888,6 +901,8 @@ function stopMobilePolling() {
         mobilePollingInterval = null;
     }
 }
+
+async function updateUserPresence(isOnline) {
     if (!currentUser) return;
     
     try {
