@@ -30,6 +30,7 @@ let displayValue = '0';
 let isPasscodeMode = false;
 let usersSubscription = null;
 let messagesSubscription = null;
+let typingSubscription = null;
 
 // Global variable to store message cache
 let messageCache = new Map();
@@ -37,6 +38,20 @@ let messageCache = new Map();
 // Store failed messages for retry
 let failedMessages = [];
 let failedMessageRetryInterval = null;
+
+// Typing indicator variables
+let typingTimeout = null;
+let isTyping = false;
+let typingUsers = new Set();
+
+// Message status tracking
+let messageStatusMap = new Map(); // messageId -> status
+let deliveredMessages = new Set();
+let readMessages = new Set();
+
+// Connection quality tracking
+let connectionQuality = 'good'; // good, poor, offline
+let lastConnectionCheck = Date.now();
 
 function startFailedMessageRetry() {
     if (failedMessageRetryInterval) {
@@ -440,10 +455,54 @@ async function handlePasscodeSetup() {
     }
 }
 
-// Calculator Functions
+// Calculator Functions with enhanced features
 function setupCalculatorEvents() {
     // Remove the touch event prevention that was blocking mobile buttons
     // The CSS will handle touch interactions properly
+    
+    // Add calculator history tracking
+    initCalculatorHistory();
+}
+
+// Calculator history functionality
+let calculatorHistory = [];
+let maxHistoryItems = 10;
+
+function initCalculatorHistory() {
+    try {
+        const saved = localStorage.getItem('calculator_history');
+        if (saved) {
+            calculatorHistory = JSON.parse(saved);
+        }
+    } catch (error) {
+        console.warn('Failed to load calculator history:', error);
+        calculatorHistory = [];
+    }
+}
+
+function saveCalculatorHistory() {
+    try {
+        localStorage.setItem('calculator_history', JSON.stringify(calculatorHistory));
+    } catch (error) {
+        console.warn('Failed to save calculator history:', error);
+    }
+}
+
+function addToHistory(expression, result) {
+    const historyItem = {
+        expression: expression,
+        result: result,
+        timestamp: new Date().toISOString()
+    };
+    
+    calculatorHistory.unshift(historyItem);
+    
+    // Keep only the last maxHistoryItems
+    if (calculatorHistory.length > maxHistoryItems) {
+        calculatorHistory = calculatorHistory.slice(0, maxHistoryItems);
+    }
+    
+    saveCalculatorHistory();
 }
 
 function appendNumber(num) {
@@ -453,18 +512,23 @@ function appendNumber(num) {
         displayValue += num;
     }
     updateDisplay();
+    
+    // Add visual feedback
+    addCalculatorFeedback();
 }
 
 function appendOperator(operator) {
     if (!isPasscodeMode) {
         displayValue += operator;
         updateDisplay();
+        addCalculatorFeedback();
     }
 }
 
 function clearDisplay() {
     displayValue = '0';
     updateDisplay();
+    addCalculatorFeedback('clear');
 }
 
 function deleteLast() {
@@ -474,10 +538,42 @@ function deleteLast() {
         displayValue = '0';
     }
     updateDisplay();
+    addCalculatorFeedback('delete');
 }
 
 function updateDisplay() {
-    calcDisplay.textContent = displayValue;
+    const display = document.getElementById('calc-display');
+    display.textContent = displayValue;
+    
+    // Add dynamic text size based on length
+    if (displayValue.length > 10) {
+        display.style.fontSize = '2rem';
+    } else if (displayValue.length > 8) {
+        display.style.fontSize = '2.4rem';
+    } else {
+        display.style.fontSize = '2.8rem';
+    }
+    
+    // Add subtle animation
+    display.style.transform = 'scale(1.02)';
+    setTimeout(() => {
+        display.style.transform = 'scale(1)';
+    }, 100);
+}
+
+function addCalculatorFeedback(type = 'default') {
+    const display = document.getElementById('calc-display');
+    
+    // Remove existing feedback classes
+    display.classList.remove('feedback-default', 'feedback-clear', 'feedback-delete', 'feedback-error');
+    
+    // Add appropriate feedback class
+    display.classList.add(`feedback-${type}`);
+    
+    // Remove class after animation
+    setTimeout(() => {
+        display.classList.remove(`feedback-${type}`);
+    }, 300);
 }
 
 async function checkPasscode() {
@@ -494,29 +590,60 @@ async function checkPasscode() {
             if (error) throw error;
             
             if (profile.passcode_hash === hashedInput) {
-                showChatApp();
-            } else {
-                // Shake animation for wrong passcode
-                calcDisplay.style.animation = 'shake 0.5s ease-in-out';
+                // Success animation
+                const display = document.getElementById('calc-display');
+                display.style.color = 'var(--accent-green)';
+                display.textContent = '✓ Access Granted';
+                
                 setTimeout(() => {
-                    calcDisplay.style.animation = '';
+                    showChatApp();
+                }, 1000);
+            } else {
+                // Enhanced wrong passcode feedback
+                const display = document.getElementById('calc-display');
+                const calculator = document.getElementById('calculator');
+                
+                // Visual feedback
+                display.style.color = 'var(--accent-red)';
+                display.textContent = '✗ Wrong Passcode';
+                calculator.style.animation = 'shake 0.5s ease-in-out';
+                
+                // Haptic feedback if available
+                if (navigator.vibrate) {
+                    navigator.vibrate([100, 50, 100]);
+                }
+                
+                setTimeout(() => {
+                    display.style.color = 'var(--text-primary)';
+                    calculator.style.animation = '';
                     displayValue = '';
                     updateDisplay();
-                }, 500);
+                }, 1500);
             }
         } catch (error) {
             console.error('Passcode verification error:', error);
-            showError('Verification failed');
+            addCalculatorFeedback('error');
+            showError('Verification failed. Please try again.');
         }
     } else {
-        // Normal calculator operation
+        // Normal calculator operation with history
         try {
-            const result = eval(displayValue.replace('×', '*'));
+            const expression = displayValue.replace('×', '*');
+            const result = eval(expression);
+            
+            // Add to history if it's a valid calculation
+            if (!isNaN(result) && isFinite(result)) {
+                addToHistory(displayValue, result.toString());
+            }
+            
             displayValue = result.toString();
             updateDisplay();
+            addCalculatorFeedback();
         } catch (error) {
             displayValue = 'Error';
             updateDisplay();
+            addCalculatorFeedback('error');
+            
             setTimeout(() => {
                 displayValue = '0';
                 updateDisplay();
@@ -624,6 +751,8 @@ function getLastActiveText(lastActive) {
 }
 
 function selectUser(user) {
+    console.log('Selecting user:', user.username);
+    
     currentChatPartner = user;
     
     // Stop any existing mobile polling
@@ -633,35 +762,63 @@ function selectUser(user) {
     document.querySelectorAll('.user-item').forEach(item => {
         item.classList.remove('active');
     });
-    event.currentTarget.classList.add('active');
+    
+    // Find and activate the selected user item
+    const selectedUserElement = document.querySelector(`[data-user-id="${user.id}"]`);
+    if (selectedUserElement) {
+        selectedUserElement.classList.add('active');
+    }
     
     // Enable message input
     const messageInput = document.getElementById('message-input');
     const sendBtn = document.getElementById('send-btn');
-    messageInput.disabled = false;
-    sendBtn.disabled = false;
-    messageInput.placeholder = `Message ${user.username}...`;
+    if (messageInput && sendBtn) {
+        messageInput.disabled = false;
+        sendBtn.disabled = false;
+        messageInput.placeholder = `Message ${user.username}...`;
+    }
     
     // Load chat messages
     loadMessages(user.id);
     
     // Mobile: Show chat area and hide user list
-    if (window.innerWidth <= 768) {
+    if (isMobileDevice() || window.innerWidth <= 768) {
         showChatArea(user.username);
         
-        // Set up mobile polling fallback after a delay
+        // Set up mobile polling fallback after a delay to let real-time try first
         setTimeout(() => {
             if (currentChatPartner && currentChatPartner.id === user.id) {
+                console.log('Setting up mobile polling for', user.username);
                 setupMobilePollingFallback();
             }
-        }, 5000); // 5 second delay to let real-time try first
+        }, 3000); // 3 second delay
+    } else {
+        // Desktop: Set up polling fallback if real-time fails
+        setTimeout(() => {
+            if (currentChatPartner && currentChatPartner.id === user.id) {
+                // Check if real-time is working, if not, start polling
+                if (connectionQuality === 'poor' || connectionQuality === 'very-poor') {
+                    console.log('Poor connection detected, starting polling for', user.username);
+                    setupMobilePollingFallback();
+                }
+            }
+        }, 5000); // 5 second delay for desktop
     }
     
     // Focus message input
-    messageInput.focus();
+    setTimeout(() => {
+        if (messageInput && !isMobileDevice()) {
+            messageInput.focus();
+        }
+    }, 500);
     
     // Update last message check time
     lastMessageCheck = new Date().toISOString();
+    
+    // Clear any existing search
+    clearSearch();
+    
+    console.log('User selection complete for:', user.username);
 }
 
 // Mobile navigation functions
@@ -691,6 +848,9 @@ function showUserList() {
 
 async function loadMessages(partnerId) {
     try {
+        // Clear unread count for this user
+        unreadMessageCounts.set(partnerId, 0);
+        
         const { data: messages, error } = await supabaseClient
             .from('messages')
             .select('*')
@@ -699,45 +859,56 @@ async function loadMessages(partnerId) {
             
         if (error) throw error;
         
-        // Cache messages
+        // Cache all messages
         if (messages) {
             messages.forEach(msg => {
                 messageCache.set(msg.id, msg);
             });
             
-            // Store offline copy
+            // Store offline copy with merge
             storeMessagesOffline(messages);
         }
         
-        displayMessages(messages);
+        displayMessages(messages || []);
         
         // Update last message check time to prevent duplicates in polling
         if (messages && messages.length > 0) {
             lastMessageCheck = messages[messages.length - 1].timestamp;
+        } else {
+            lastMessageCheck = new Date().toISOString();
         }
         
     } catch (error) {
         console.error('Load messages error:', error);
+        
         // Try to show cached messages if available
         const cachedMessages = Array.from(messageCache.values()).filter(msg => 
             (msg.sender_id === currentUser.id && msg.receiver_id === partnerId) ||
             (msg.sender_id === partnerId && msg.receiver_id === currentUser.id)
-        );
+        ).sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
         
         if (cachedMessages.length > 0) {
+            console.log('Showing cached messages:', cachedMessages.length);
             displayMessages(cachedMessages);
         } else {
             // Try offline messages
             const offlineMessages = getOfflineMessages().filter(msg => 
                 (msg.sender_id === currentUser.id && msg.receiver_id === partnerId) ||
                 (msg.sender_id === partnerId && msg.receiver_id === currentUser.id)
-            );
+            ).sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
             
             if (offlineMessages.length > 0) {
+                console.log('Showing offline messages:', offlineMessages.length);
                 displayMessages(offlineMessages);
+                
+                // Cache offline messages
+                offlineMessages.forEach(msg => {
+                    messageCache.set(msg.id, msg);
+                });
             } else {
-                // Show error to user but don't break the app
-                showError('Failed to load messages. Please refresh.');
+                // Show error but don't break the app
+                showError('Could not load messages. Check your connection.');
+                displayMessages([]);
             }
         }
     }
@@ -798,6 +969,11 @@ function createMessageElement(message) {
         messageDiv.classList.add('failed');
     }
     
+    // Add message status if specified
+    if (message.status) {
+        messageDiv.classList.add(message.status);
+    }
+    
     let content = '';
     if (message.type === 'tiktok') {
         content = createTikTokEmbed(message.content);
@@ -810,25 +986,68 @@ function createMessageElement(message) {
         minute: '2-digit' 
     });
     
-    // Add visual indicator for sent messages
+    // Enhanced status indicator for sent messages
     let statusIndicator = '';
     if (isSent) {
-        // Check if message has been read (simplified implementation)
-        const isRead = readMessages.has(message.id);
-        statusIndicator = `<div class="message-status">${isRead ? '✓✓' : '✓'}</div>`;
+        let statusIcon = '🕐'; // Clock for sending
+        let statusText = 'Sending...';
+        let statusClass = 'status-sending';
+        
+        if (message.id.toString().startsWith('temp-')) {
+            statusIcon = '🕐';
+            statusText = 'Sending...';
+            statusClass = 'status-sending';
+        } else if (deliveredMessages.has(message.id)) {
+            if (readMessages.has(message.id)) {
+                statusIcon = '✓✓';
+                statusText = 'Read';
+                statusClass = 'status-read';
+            } else {
+                statusIcon = '✓✓';
+                statusText = 'Delivered';
+                statusClass = 'status-delivered';
+            }
+        } else {
+            statusIcon = '✓';
+            statusText = 'Sent';
+            statusClass = 'status-sent';
+        }
+        
+        statusIndicator = `
+            <div class="message-status ${statusClass}" title="${statusText}">
+                <span class="status-icon">${statusIcon}</span>
+            </div>
+        `;
     }
     
     // Add retry button for failed messages
-    const retryButton = isFailed ? '<button class="retry-btn" onclick="retrySpecificMessage(this)">Retry</button>' : '';
+    const retryButton = isFailed ? `
+        <button class="retry-btn" onclick="retrySpecificMessage(this)" title="Retry sending message">
+            <span>🔄</span> Retry
+        </button>
+    ` : '';
+    
+    // Add message reactions placeholder
+    const reactionsDiv = `
+        <div class="message-reactions" data-message-id="${message.id}">
+            <!-- Reactions will be added here -->
+        </div>
+    `;
     
     messageDiv.innerHTML = `
         ${content}
         <div class="message-footer">
-            <div class="message-timestamp">${timestamp}</div>
+            <div class="message-timestamp" title="${new Date(message.timestamp).toLocaleString()}">${timestamp}</div>
             ${statusIndicator}
         </div>
         ${retryButton}
+        ${reactionsDiv}
     `;
+    
+    // Add long press listener for message options (not for temporary messages)
+    if (!message.id.toString().startsWith('temp-')) {
+        addLongPressListener(messageDiv, message.id);
+    }
     
     return messageDiv;
 }
@@ -875,8 +1094,11 @@ async function sendMessage() {
     // Show sending indicator
     const sendBtn = document.getElementById('send-btn');
     const originalText = sendBtn.textContent;
-    sendBtn.textContent = 'Sending...';
+    sendBtn.textContent = '✈️';
     sendBtn.disabled = true;
+    
+    // Generate unique temp ID
+    const tempId = 'temp-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9);
     
     try {
         // Detect if message is a TikTok URL
@@ -893,52 +1115,83 @@ async function sendMessage() {
         
         // Add the message to UI immediately for better UX
         const tempMessage = {
-            id: 'temp-' + Date.now(),
-            ...messageData
+            id: tempId,
+            ...messageData,
+            status: 'sending'
         };
-        
-        const tempMessageElement = createMessageElement(tempMessage);
-        tempMessageElement.classList.add('sending');
-        const chatMessages = document.getElementById('chat-messages');
-        if (chatMessages) {
-            chatMessages.appendChild(tempMessageElement);
-            chatMessages.scrollTop = chatMessages.scrollHeight;
-        }
         
         // Clear input immediately
         messageInput.value = '';
         
-        // Insert message into database
-        const { data, error } = await supabaseClient
-            .from('messages')
-            .insert(messageData)
-            .select()
-            .single();
+        const chatMessages = document.getElementById('chat-messages');
+        if (chatMessages) {
+            // Remove welcome message if it exists
+            const welcomeMsg = chatMessages.querySelector('.welcome-message');
+            if (welcomeMsg) {
+                welcomeMsg.remove();
+            }
+            
+            const tempMessageElement = createMessageElement(tempMessage);
+            tempMessageElement.classList.add('sending');
+            tempMessageElement.setAttribute('data-message-id', tempId);
+            chatMessages.appendChild(tempMessageElement);
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
+        
+        // Insert message into database with retry logic
+        let insertAttempts = 0;
+        let data = null;
+        let error = null;
+        
+        while (insertAttempts < 3 && !data) {
+            insertAttempts++;
+            
+            const result = await supabaseClient
+                .from('messages')
+                .insert(messageData)
+                .select()
+                .single();
+                
+            data = result.data;
+            error = result.error;
+            
+            if (error && insertAttempts < 3) {
+                console.warn(`Message send attempt ${insertAttempts} failed, retrying...`, error);
+                await new Promise(resolve => setTimeout(resolve, 1000 * insertAttempts));
+            }
+        }
         
         if (error) throw error;
         
         // Replace temporary message with actual message
         if (chatMessages && data) {
-            // Remove temporary message
-            const tempElement = chatMessages.querySelector(`[data-message-id="${tempMessage.id}"]`);
+            const tempElement = chatMessages.querySelector(`[data-message-id="${tempId}"]`);
             if (tempElement) {
-                tempElement.remove();
+                // Update the temp element with real data
+                tempElement.setAttribute('data-message-id', data.id);
+                tempElement.classList.remove('sending');
+                tempElement.classList.add('sent');
+                
+                // Update status indicator
+                const statusIndicator = tempElement.querySelector('.message-status');
+                if (statusIndicator) {
+                    statusIndicator.innerHTML = '✓';
+                }
             }
             
-            // Add actual message
-            const messageElement = createMessageElement(data);
-            messageElement.setAttribute('data-message-id', data.id);
-            chatMessages.appendChild(messageElement);
-            chatMessages.scrollTop = chatMessages.scrollHeight;
-            
-            // Cache the message
+            // Cache the message permanently
             messageCache.set(data.id, data);
             
+            // Store offline for persistence
+            storeMessageOffline(data);
+            
             // Force reflow to ensure message stays visible
-            chatMessages.offsetHeight;
+            setTimeout(() => {
+                chatMessages.scrollTop = chatMessages.scrollHeight;
+            }, 100);
         }
         
-        console.log('Message sent successfully');
+        console.log('Message sent successfully:', data.id);
         
         // Remove from failed messages if it was there
         const failedIndex = failedMessages.findIndex(msg => msg.content === content);
@@ -949,8 +1202,26 @@ async function sendMessage() {
     } catch (error) {
         console.error('Send message error:', error);
         
+        // Update temp message to show failed state
+        const chatMessages = document.getElementById('chat-messages');
+        if (chatMessages) {
+            const tempElement = chatMessages.querySelector(`[data-message-id="${tempId}"]`);
+            if (tempElement) {
+                tempElement.classList.remove('sending');
+                tempElement.classList.add('failed');
+                
+                // Add retry button
+                const retryBtn = document.createElement('button');
+                retryBtn.className = 'retry-btn';
+                retryBtn.textContent = '↻ Retry';
+                retryBtn.onclick = () => retrySpecificMessage(retryBtn);
+                tempElement.appendChild(retryBtn);
+            }
+        }
+        
         // Store failed message for retry
         const failedMessage = {
+            tempId: tempId,
             content: content,
             receiver_id: currentChatPartner.id,
             timestamp: new Date().toISOString(),
@@ -959,21 +1230,8 @@ async function sendMessage() {
         
         failedMessages.push(failedMessage);
         
-        // Remove temporary message if it exists
-        const chatMessages = document.getElementById('chat-messages');
-        if (chatMessages) {
-            const tempElements = chatMessages.querySelectorAll('[class*="sending"]');
-            if (tempElements.length > 0) {
-                tempElements[tempElements.length - 1].remove();
-            }
-        }
+        showError('Message failed to send. Tap retry to resend.');
         
-        showError('Failed to send message. Will retry when connected.');
-        
-        // Try to resend after a delay
-        setTimeout(() => {
-            retryFailedMessages();
-        }, 5000);
     } finally {
         // Restore send button
         sendBtn.textContent = originalText;
@@ -1104,9 +1362,101 @@ async function retryFailedMessages() {
 // Enter key to send message
 document.getElementById('message-input').addEventListener('keypress', (e) => {
     if (e.key === 'Enter') {
+        e.preventDefault();
         sendMessage();
     }
 });
+
+// Add typing indicator support
+document.getElementById('message-input').addEventListener('input', (e) => {
+    handleTyping();
+});
+
+document.getElementById('message-input').addEventListener('keyup', (e) => {
+    if (e.key !== 'Enter') {
+        handleTyping();
+    }
+});
+
+// Typing indicator functions
+function handleTyping() {
+    if (!currentChatPartner || !currentUser) return;
+    
+    if (!isTyping) {
+        isTyping = true;
+        sendTypingIndicator(true);
+    }
+    
+    // Clear existing timeout
+    if (typingTimeout) {
+        clearTimeout(typingTimeout);
+    }
+    
+    // Set new timeout to stop typing indicator
+    typingTimeout = setTimeout(() => {
+        isTyping = false;
+        sendTypingIndicator(false);
+    }, 1000); // Stop typing after 1 second of inactivity
+}
+
+async function sendTypingIndicator(typing) {
+    if (!currentChatPartner || !currentUser) return;
+    
+    try {
+        const { error } = await supabaseClient
+            .from('typing_indicators')
+            .upsert({
+                user_id: currentUser.id,
+                chat_partner_id: currentChatPartner.id,
+                is_typing: typing,
+                updated_at: new Date().toISOString()
+            }, {
+                onConflict: 'user_id,chat_partner_id'
+            });
+            
+        if (error) {
+            console.warn('Failed to send typing indicator:', error);
+        }
+    } catch (error) {
+        console.warn('Typing indicator error:', error);
+    }
+}
+
+function showTypingIndicator(username) {
+    const chatMessages = document.getElementById('chat-messages');
+    if (!chatMessages) return;
+    
+    // Remove existing typing indicator
+    const existingIndicator = chatMessages.querySelector('.typing-indicator');
+    if (existingIndicator) {
+        existingIndicator.remove();
+    }
+    
+    // Create new typing indicator
+    const typingDiv = document.createElement('div');
+    typingDiv.className = 'typing-indicator';
+    typingDiv.innerHTML = `
+        <span>${username} is typing</span>
+        <div class="typing-dots">
+            <div class="typing-dot"></div>
+            <div class="typing-dot"></div>
+            <div class="typing-dot"></div>
+        </div>
+    `;
+    
+    chatMessages.appendChild(typingDiv);
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+}
+
+function hideTypingIndicator() {
+    const chatMessages = document.getElementById('chat-messages');
+    if (!chatMessages) return;
+    
+    const typingIndicator = chatMessages.querySelector('.typing-indicator');
+    if (typingIndicator) {
+        typingIndicator.remove();
+    }
+}
 
 // Real-time subscriptions
 function setupRealtimeSubscriptions() {
@@ -1145,40 +1495,78 @@ function setupRealtimeSubscriptions() {
                     console.log('New message received:', payload);
                     const message = payload.new;
                     
-                    // Cache the message
+                    // Cache the message immediately
                     messageCache.set(message.id, message);
+                    
+                    // Store offline for persistence
+                    storeMessageOffline(message);
                     
                     // Check if this message is for current chat
                     if (currentChatPartner && 
                         ((message.sender_id === currentUser.id && message.receiver_id === currentChatPartner.id) ||
                          (message.sender_id === currentChatPartner.id && message.receiver_id === currentUser.id))) {
                         
-                        // Check if message already exists to prevent duplicates
                         const chatMessages = document.getElementById('chat-messages');
                         if (chatMessages) {
+                            // Check if message already exists to prevent duplicates
                             const existingMessage = chatMessages.querySelector(`[data-message-id="${message.id}"]`);
-                            if (!existingMessage) {
-                                // Add message to chat immediately
+                            if (existingMessage) {
+                                console.log('Message already exists, skipping duplicate');
+                                return;
+                            }
+                            
+                            // Remove welcome message if it exists
+                            const welcomeMsg = chatMessages.querySelector('.welcome-message');
+                            if (welcomeMsg) {
+                                welcomeMsg.remove();
+                            }
+                            
+                            // Check if this is replacing a temporary message
+                            const tempElements = chatMessages.querySelectorAll('[class*="sending"]');
+                            let replacedTemp = false;
+                            
+                            // If this is our own message, try to replace temp message
+                            if (message.sender_id === currentUser.id && tempElements.length > 0) {
+                                const lastTempElement = tempElements[tempElements.length - 1];
+                                const tempContent = lastTempElement.querySelector('.message-content')?.textContent;
+                                
+                                // If content matches, replace the temp message
+                                if (tempContent === message.content) {
+                                    lastTempElement.setAttribute('data-message-id', message.id);
+                                    lastTempElement.classList.remove('sending');
+                                    lastTempElement.classList.add('sent');
+                                    
+                                    // Update status indicator
+                                    const statusDiv = lastTempElement.querySelector('.message-status');
+                                    if (statusDiv) {
+                                        statusDiv.innerHTML = '✓';
+                                    }
+                                    
+                                    replacedTemp = true;
+                                }
+                            }
+                            
+                            // If we didn't replace a temp message, add as new
+                            if (!replacedTemp) {
                                 const messageElement = createMessageElement(message);
                                 messageElement.setAttribute('data-message-id', message.id);
-                                
-                                // Check if this is a temporary message being replaced
-                                const tempElements = chatMessages.querySelectorAll('[class*="sending"]');
-                                if (tempElements.length > 0) {
-                                    // Replace the last temporary message
-                                    tempElements[tempElements.length - 1].replaceWith(messageElement);
-                                } else {
-                                    chatMessages.appendChild(messageElement);
-                                }
-                                
-                                chatMessages.scrollTop = chatMessages.scrollHeight;
-                                
-                                // Force a visual update
-                                setTimeout(() => {
-                                    chatMessages.scrollTop = chatMessages.scrollHeight;
-                                }, 100);
+                                chatMessages.appendChild(messageElement);
                             }
+                            
+                            // Always scroll to bottom and force update
+                            setTimeout(() => {
+                                chatMessages.scrollTop = chatMessages.scrollHeight;
+                                chatMessages.offsetHeight; // Force reflow
+                            }, 50);
                         }
+                    }
+                    
+                    // Update unread counts for other chats
+                    if (message.receiver_id === currentUser.id && 
+                        (!currentChatPartner || message.sender_id !== currentChatPartner.id)) {
+                        const currentCount = unreadMessageCounts.get(message.sender_id) || 0;
+                        unreadMessageCounts.set(message.sender_id, currentCount + 1);
+                        updateUnreadCounts();
                     }
                 }
             )
@@ -1203,6 +1591,9 @@ function setupRealtimeSubscriptions() {
 // Mobile polling fallback for when real-time fails
 let mobilePollingInterval = null;
 let lastMessageCheck = new Date().toISOString();
+let lastPollingCheck = new Date().toISOString();
+let pollingRetryCount = 0;
+let maxPollingRetries = 3;
 
 function setupMobilePollingFallback() {
     // Clear existing interval
@@ -1211,53 +1602,144 @@ function setupMobilePollingFallback() {
     }
     
     // Only set up polling if we have a chat partner
-    if (!currentChatPartner) return;
+    if (!currentChatPartner || !currentUser) {
+        console.log('No chat partner or user, skipping mobile polling setup');
+        return;
+    }
     
-    console.log('Setting up mobile polling fallback');
+    console.log('Setting up mobile polling fallback for:', currentChatPartner.username);
+    
+    // Reset polling check time and retry count
+    lastPollingCheck = new Date().toISOString();
+    pollingRetryCount = 0;
     
     mobilePollingInterval = setInterval(async () => {
         try {
+            // Double-check we still have a chat partner
+            if (!currentChatPartner || !currentUser) {
+                console.log('Chat partner lost, stopping mobile polling');
+                stopMobilePolling();
+                return;
+            }
+            
             // Check for new messages since last check
             const { data: newMessages, error } = await supabaseClient
                 .from('messages')
                 .select('*')
                 .or(`and(sender_id.eq.${currentUser.id},receiver_id.eq.${currentChatPartner.id}),and(sender_id.eq.${currentChatPartner.id},receiver_id.eq.${currentUser.id})`)
-                .gt('timestamp', lastMessageCheck)
+                .gt('timestamp', lastPollingCheck)
                 .order('timestamp', { ascending: true });
                 
             if (error) {
-                console.error('Polling error:', error);
+                console.error('Mobile polling error:', error);
+                pollingRetryCount++;
+                
+                if (pollingRetryCount >= maxPollingRetries) {
+                    console.error('Max polling retries reached, stopping mobile polling');
+                    stopMobilePolling();
+                    updateConnectionStatus('disconnected');
+                }
                 return;
             }
             
+            // Reset retry count on success
+            pollingRetryCount = 0;
+            
             if (newMessages && newMessages.length > 0) {
-                console.log('Found new messages via polling:', newMessages.length);
+                console.log('Found new messages via mobile polling:', newMessages.length);
                 
                 const chatMessages = document.getElementById('chat-messages');
                 if (chatMessages) {
+                    let addedNewMessages = false;
+                    
                     newMessages.forEach(message => {
                         // Check if message already exists to prevent duplicates
                         const existingMessage = chatMessages.querySelector(`[data-message-id="${message.id}"]`);
                         if (!existingMessage) {
+                            // Cache the message
+                            messageCache.set(message.id, message);
+                            
+                            // Store offline
+                            storeMessageOffline(message);
+                            
+                            // Remove welcome message if it exists
+                            const welcomeMsg = chatMessages.querySelector('.welcome-message');
+                            if (welcomeMsg) {
+                                welcomeMsg.remove();
+                            }
+                            
+                            // Add message to UI
                             const messageElement = createMessageElement(message);
                             messageElement.setAttribute('data-message-id', message.id);
+                            
+                            // Add long press listener for mobile
+                            addLongPressListener(messageElement, message.id);
+                            
                             chatMessages.appendChild(messageElement);
+                            addedNewMessages = true;
+                            
+                            // Mark as read if it's for current user
+                            if (message.receiver_id === currentUser.id) {
+                                markMessageAsRead(message.id);
+                            }
                         }
                     });
                     
-                    chatMessages.scrollTop = chatMessages.scrollHeight;
+                    // Only scroll and reflow if we added new messages
+                    if (addedNewMessages) {
+                        // Scroll to bottom with smooth animation
+                        setTimeout(() => {
+                            chatMessages.scrollTop = chatMessages.scrollHeight;
+                            chatMessages.offsetHeight; // Force reflow
+                        }, 100);
+                        
+                        // Update unread counts
+                        updateUnreadCounts();
+                    }
                 }
                 
                 // Update last check time to the latest message timestamp
                 const latestMessage = newMessages[newMessages.length - 1];
                 if (latestMessage && latestMessage.timestamp) {
-                    lastMessageCheck = latestMessage.timestamp;
+                    lastPollingCheck = latestMessage.timestamp;
                 }
+            } else {
+                // No new messages, just update timestamp
+                lastPollingCheck = new Date().toISOString();
             }
+            
+            // Update connection status
+            updateConnectionStatus('connected');
+            
         } catch (error) {
-            console.error('Mobile polling error:', error);
+            console.error('Mobile polling critical error:', error);
+            pollingRetryCount++;
+            
+            if (pollingRetryCount >= maxPollingRetries) {
+                console.error('Too many polling errors, stopping mobile polling');
+                stopMobilePolling();
+                updateConnectionStatus('disconnected');
+                
+                // Show user-friendly error
+                showError('Connection issues detected. Messages may be delayed.', null, {
+                    type: 'warning',
+                    duration: 5000,
+                    actions: [
+                        {
+                            text: 'Retry',
+                            handler: () => {
+                                if (currentChatPartner) {
+                                    setupMobilePollingFallback();
+                                }
+                            }
+                        }
+                    ]
+                });
+            }
         }
-    }, 5000); // Check every 5 seconds
+    }, 2000); // Check every 2 seconds for better mobile experience
+    
+    console.log('Mobile polling started successfully');
 }
 
 function stopMobilePolling() {
@@ -1441,15 +1923,17 @@ document.addEventListener('visibilitychange', () => {
     }
 });
 
-// Periodic connection check
+// Periodic connection check with quality monitoring
 function startConnectionCheck() {
     if (connectionCheckInterval) {
         clearInterval(connectionCheckInterval);
     }
     
     connectionCheckInterval = setInterval(async () => {
+        const startTime = Date.now();
+        
         try {
-            // Simple connectivity check
+            // Simple connectivity check with timing
             const { data, error } = await supabaseClient
                 .from('user_profiles')
                 .select('id')
@@ -1457,15 +1941,171 @@ function startConnectionCheck() {
                 .limit(1)
                 .single();
                 
+            const responseTime = Date.now() - startTime;
+            
             if (error) {
                 updateConnectionStatus('disconnected');
+                connectionQuality = 'offline';
             } else {
                 updateConnectionStatus('connected');
+                
+                // Determine connection quality based on response time
+                if (responseTime < 500) {
+                    connectionQuality = 'good';
+                } else if (responseTime < 2000) {
+                    connectionQuality = 'poor';
+                } else {
+                    connectionQuality = 'very-poor';
+                }
+                
+                updateConnectionQuality(connectionQuality);
             }
         } catch (error) {
             updateConnectionStatus('disconnected');
+            connectionQuality = 'offline';
+            updateConnectionQuality('offline');
         }
-    }, 30000); // Check every 30 seconds
+        
+        lastConnectionCheck = Date.now();
+    }, 15000); // Check every 15 seconds for better battery life
+}
+
+function updateConnectionQuality(quality) {
+    const statusElement = document.getElementById('connection-status');
+    if (!statusElement) return;
+    
+    // Remove existing quality classes
+    statusElement.classList.remove('quality-good', 'quality-poor', 'quality-very-poor', 'quality-offline');
+    
+    // Add current quality class
+    statusElement.classList.add(`quality-${quality}`);
+    
+    // Update status text with quality indicator
+    let statusText = 'Online';
+    let qualityIcon = '🟢'; // Green circle
+    
+    switch (quality) {
+        case 'good':
+            statusText = 'Online';
+            qualityIcon = '🟢'; // Green circle
+            break;
+        case 'poor':
+            statusText = 'Slow';
+            qualityIcon = '🟡'; // Yellow circle
+            break;
+        case 'very-poor':
+            statusText = 'Very Slow';
+            qualityIcon = '🔴'; // Red circle
+            break;
+        case 'offline':
+            statusText = 'Offline';
+            qualityIcon = '⚫'; // Black circle
+            break;
+    }
+    
+    statusElement.innerHTML = `<span class="quality-icon">${qualityIcon}</span> ${statusText}`;
+}
+
+// Enhanced error handling with retry logic
+function showError(message, elementId = null, options = {}) {
+    console.error('App Error:', message);
+    
+    const {
+        duration = 8000,
+        type = 'error',
+        persistent = false,
+        actions = []
+    } = options;
+    
+    if (elementId) {
+        const errorElement = document.getElementById(elementId);
+        if (errorElement) {
+            errorElement.textContent = message;
+            errorElement.className = `error-message ${type}`;
+            
+            if (!persistent) {
+                setTimeout(() => {
+                    errorElement.textContent = '';
+                    errorElement.className = 'error-message';
+                }, duration);
+            }
+        }
+    } else {
+        // Create enhanced toast notification
+        const toast = document.createElement('div');
+        toast.className = `toast-${type}`;
+        
+        const content = document.createElement('div');
+        content.className = 'toast-content';
+        content.textContent = message;
+        
+        const closeBtn = document.createElement('button');
+        closeBtn.innerHTML = '&times;';
+        closeBtn.className = 'toast-close';
+        closeBtn.onclick = () => toast.remove();
+        
+        toast.appendChild(content);
+        toast.appendChild(closeBtn);
+        
+        // Add action buttons if provided
+        if (actions.length > 0) {
+            const actionsDiv = document.createElement('div');
+            actionsDiv.className = 'toast-actions';
+            
+            actions.forEach(action => {
+                const actionBtn = document.createElement('button');
+                actionBtn.textContent = action.text;
+                actionBtn.className = 'toast-action-btn';
+                actionBtn.onclick = () => {
+                    action.handler();
+                    if (action.closeOnClick !== false) {
+                        toast.remove();
+                    }
+                };
+                actionsDiv.appendChild(actionBtn);
+            });
+            
+            toast.appendChild(actionsDiv);
+        }
+        
+        document.body.appendChild(toast);
+        
+        // Auto remove if not persistent
+        if (!persistent) {
+            setTimeout(() => {
+                if (toast.parentNode) {
+                    toast.remove();
+                }
+            }, duration);
+        }
+    }
+    
+    // Handle specific error types
+    if (message.includes('429') || message.includes('Rate limited')) {
+        setTimeout(() => {
+            showError('Rate limit detected. This usually resolves automatically.', null, {
+                type: 'warning',
+                actions: [
+                    {
+                        text: 'Clear Cache',
+                        handler: clearCachedData
+                    }
+                ]
+            });
+        }, 2000);
+    }
+    
+    if (message.includes('Network') || message.includes('connection')) {
+        // Auto-retry network errors
+        setTimeout(() => {
+            if (connectionQuality === 'offline') {
+                showError('Still offline. Checking connection...', null, {
+                    type: 'info',
+                    duration: 3000
+                });
+            }
+        }, 5000);
+    }
 }
 
 function stopConnectionCheck() {
@@ -1593,9 +2233,7 @@ function updateUnreadCounts() {
     }
 }
 
-// Track message read status
-let readMessages = new Set();
-
+// Track message read status - using existing readMessages from global scope
 function markMessageAsRead(messageId) {
     readMessages.add(messageId);
 }
@@ -1647,9 +2285,42 @@ function displayMessages(messages) {
 function storeMessagesOffline(messages) {
     try {
         const key = `securechat_messages_${currentUser.id}`;
-        localStorage.setItem(key, JSON.stringify(messages));
+        const existingMessages = getOfflineMessages();
+        
+        // Merge with existing messages, avoiding duplicates
+        const messageMap = new Map();
+        
+        // Add existing messages
+        existingMessages.forEach(msg => {
+            messageMap.set(msg.id, msg);
+        });
+        
+        // Add new messages
+        messages.forEach(msg => {
+            messageMap.set(msg.id, msg);
+        });
+        
+        const allMessages = Array.from(messageMap.values());
+        localStorage.setItem(key, JSON.stringify(allMessages));
     } catch (error) {
         console.error('Failed to store messages offline:', error);
+    }
+}
+
+// Store a single message offline
+function storeMessageOffline(message) {
+    try {
+        const key = `securechat_messages_${currentUser.id}`;
+        const existingMessages = getOfflineMessages();
+        
+        // Check if message already exists
+        const messageExists = existingMessages.some(msg => msg.id === message.id);
+        if (!messageExists) {
+            existingMessages.push(message);
+            localStorage.setItem(key, JSON.stringify(existingMessages));
+        }
+    } catch (error) {
+        console.error('Failed to store message offline:', error);
     }
 }
 
@@ -1683,4 +2354,591 @@ function requestNotificationPermission() {
     if ('Notification' in window && Notification.permission === 'default') {
         Notification.requestPermission();
     }
+}
+
+// Message search functionality
+let searchQuery = '';
+let searchResults = [];
+let searchHighlightTimeout = null;
+
+function searchMessages(query) {
+    if (!query || query.length < 2) {
+        clearSearchHighlights();
+        return [];
+    }
+    
+    searchQuery = query.toLowerCase();
+    searchResults = [];
+    
+    const chatMessages = document.getElementById('chat-messages');
+    if (!chatMessages) return [];
+    
+    const messages = chatMessages.querySelectorAll('.message');
+    
+    messages.forEach((messageElement, index) => {
+        const messageContent = messageElement.querySelector('.message-content');
+        if (!messageContent) return;
+        
+        const text = messageContent.textContent.toLowerCase();
+        if (text.includes(searchQuery)) {
+            searchResults.push({
+                element: messageElement,
+                index: index,
+                text: messageContent.textContent
+            });
+        }
+    });
+    
+    highlightSearchResults();
+    return searchResults;
+}
+
+function highlightSearchResults() {
+    clearSearchHighlights();
+    
+    searchResults.forEach(result => {
+        result.element.classList.add('search-highlight');
+        
+        const messageContent = result.element.querySelector('.message-content');
+        if (messageContent) {
+            const originalText = messageContent.textContent;
+            const regex = new RegExp(`(${escapeRegex(searchQuery)})`, 'gi');
+            const highlightedText = originalText.replace(regex, '<mark>$1</mark>');
+            messageContent.innerHTML = highlightedText;
+        }
+    });
+}
+
+function clearSearchHighlights() {
+    const chatMessages = document.getElementById('chat-messages');
+    if (!chatMessages) return;
+    
+    const highlightedMessages = chatMessages.querySelectorAll('.search-highlight');
+    highlightedMessages.forEach(message => {
+        message.classList.remove('search-highlight');
+        
+        const messageContent = message.querySelector('.message-content');
+        if (messageContent) {
+            // Remove HTML tags and restore original text
+            const text = messageContent.textContent;
+            messageContent.innerHTML = escapeHtml(text);
+        }
+    });
+    
+    searchResults = [];
+}
+
+function escapeRegex(string) {
+    return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function scrollToSearchResult(index) {
+    if (index < 0 || index >= searchResults.length) return;
+    
+    const result = searchResults[index];
+    result.element.scrollIntoView({
+        behavior: 'smooth',
+        block: 'center'
+    });
+    
+    // Add temporary highlight
+    result.element.classList.add('search-active');
+    
+    if (searchHighlightTimeout) {
+        clearTimeout(searchHighlightTimeout);
+    }
+    
+    searchHighlightTimeout = setTimeout(() => {
+        result.element.classList.remove('search-active');
+    }, 2000);
+}
+
+// Long press detection for message options
+let longPressTimer = null;
+let isLongPress = false;
+
+function addLongPressListener(element, messageId) {
+    let touchStartTime = 0;
+    
+    element.addEventListener('touchstart', (e) => {
+        touchStartTime = Date.now();
+        isLongPress = false;
+        
+        longPressTimer = setTimeout(() => {
+            isLongPress = true;
+            showMessageOptions(messageId);
+            
+            // Haptic feedback if available
+            if (navigator.vibrate) {
+                navigator.vibrate(50);
+            }
+        }, 500); // 500ms for long press
+    });
+    
+    element.addEventListener('touchend', (e) => {
+        if (longPressTimer) {
+            clearTimeout(longPressTimer);
+        }
+        
+        const touchDuration = Date.now() - touchStartTime;
+        if (touchDuration < 500) {
+            isLongPress = false;
+        }
+    });
+    
+    element.addEventListener('touchmove', (e) => {
+        if (longPressTimer) {
+            clearTimeout(longPressTimer);
+        }
+    });
+    
+    // Also support mouse events for desktop
+    element.addEventListener('contextmenu', (e) => {
+        e.preventDefault();
+        showMessageOptions(messageId);
+    });
+}
+
+function showMessageOptions(messageId) {
+    console.log('Message options for:', messageId);
+    
+    const message = messageCache.get(messageId);
+    if (message) {
+        const options = [
+            'Copy message',
+            'Reply to message',
+            'Forward message'
+        ];
+        
+        if (message.sender_id === currentUser.id) {
+            options.push('Delete message');
+        }
+        
+        console.log('Available options:', options);
+        
+        // For future implementation of context menu
+        showError(`Message options: ${options.join(', ')}`, null, {
+            type: 'info',
+            duration: 3000
+        });
+    }
+}
+
+// Enhanced media handling for TikTok and other media
+function createTikTokEmbed(url) {
+    // Extract TikTok video ID and create enhanced embed
+    const tiktokRegex = /(?:https?:\/\/)?(?:www\.)?(?:tiktok\.com)\/@[\w.-]+\/video\/(\d+)/;
+    const match = url.match(tiktokRegex);
+    
+    if (match) {
+        const videoId = match[1];
+        return `
+            <div class="tiktok-embed">
+                <div class="media-loading" id="tiktok-${videoId}">
+                    <div class="media-spinner"></div>
+                    <p>Loading TikTok video...</p>
+                </div>
+                <iframe 
+                    width="100%" 
+                    height="400" 
+                    src="https://www.tiktok.com/embed/v2/${videoId}" 
+                    frameborder="0" 
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" 
+                    allowfullscreen
+                    onload="hideTikTokLoading('${videoId}')"
+                    onerror="showTikTokError('${videoId}', '${url}')"
+                    style="border-radius: 12px;">
+                </iframe>
+            </div>
+        `;
+    }
+    
+    return `
+        <div class="tiktok-link">
+            <span class="media-icon">🎥</span>
+            <a href="${url}" target="_blank" rel="noopener noreferrer">${url}</a>
+        </div>
+    `;
+}
+
+function hideTikTokLoading(videoId) {
+    const loadingDiv = document.getElementById(`tiktok-${videoId}`);
+    if (loadingDiv) {
+        loadingDiv.style.display = 'none';
+    }
+}
+
+function showTikTokError(videoId, url) {
+    const loadingDiv = document.getElementById(`tiktok-${videoId}`);
+    if (loadingDiv) {
+        loadingDiv.innerHTML = `
+            <div class="media-error">
+                <span class="error-icon">⚠️</span>
+                <p>Could not load TikTok video</p>
+                <a href="${url}" target="_blank" rel="noopener noreferrer" class="fallback-link">View on TikTok</a>
+            </div>
+        `;
+    }
+}
+
+// Chat search functionality handlers
+function performSearch() {
+    const searchInput = document.getElementById('chat-search');
+    if (!searchInput) {
+        console.error('Search input not found');
+        return;
+    }
+    
+    const query = searchInput.value.trim();
+    
+    if (!query) {
+        clearSearch();
+        return;
+    }
+    
+    console.log('Performing search for:', query);
+    
+    try {
+        const results = searchMessages(query);
+        
+        // Show search results count with better UX
+        if (results.length > 0) {
+            // Create a better search results indicator
+            const searchStatus = document.createElement('div');
+            searchStatus.className = 'search-status success';
+            searchStatus.innerHTML = `
+                <span class="search-icon">🔍</span>
+                Found ${results.length} message${results.length > 1 ? 's' : ''}
+                <button class="search-nav" onclick="scrollToSearchResult(0)" title="Go to first result">↓</button>
+            `;
+            
+            // Show toast with navigation
+            showSearchToast(searchStatus.outerHTML, 'success');
+            
+            // Scroll to first result
+            scrollToSearchResult(0);
+            
+            // Add search navigation if multiple results
+            if (results.length > 1) {
+                addSearchNavigation();
+            }
+        } else {
+            const searchStatus = document.createElement('div');
+            searchStatus.className = 'search-status warning';
+            searchStatus.innerHTML = `
+                <span class="search-icon">🔍</span>
+                No messages found for "${escapeHtml(query)}"
+            `;
+            
+            showSearchToast(searchStatus.outerHTML, 'warning');
+        }
+        
+        // Update button states
+        const clearBtn = document.getElementById('clear-search-btn');
+        const searchBtn = document.getElementById('search-btn');
+        
+        if (clearBtn && searchBtn) {
+            clearBtn.classList.remove('hidden');
+            searchBtn.classList.add('hidden');
+        }
+        
+    } catch (error) {
+        console.error('Search error:', error);
+        showSearchToast(`
+            <span class="search-icon">⚠️</span>
+            Search failed. Please try again.
+        `, 'error');
+    }
+}
+
+function showSearchToast(content, type = 'info') {
+    // Remove existing search toasts
+    const existingToasts = document.querySelectorAll('.search-toast');
+    existingToasts.forEach(toast => toast.remove());
+    
+    const toast = document.createElement('div');
+    toast.className = `search-toast toast-${type}`;
+    toast.innerHTML = content;
+    
+    // Add close button
+    const closeBtn = document.createElement('button');
+    closeBtn.innerHTML = '×';
+    closeBtn.className = 'search-toast-close';
+    closeBtn.onclick = () => toast.remove();
+    toast.appendChild(closeBtn);
+    
+    document.body.appendChild(toast);
+    
+    // Auto remove after 5 seconds
+    setTimeout(() => {
+        if (toast.parentNode) {
+            toast.remove();
+        }
+    }, 5000);
+}
+
+function addSearchNavigation() {
+    const chatMessages = document.getElementById('chat-messages');
+    if (!chatMessages || searchResults.length <= 1) return;
+    
+    // Remove existing navigation
+    const existingNav = document.querySelector('.search-navigation-overlay');
+    if (existingNav) existingNav.remove();
+    
+    // Create navigation overlay
+    const navOverlay = document.createElement('div');
+    navOverlay.className = 'search-navigation-overlay';
+    navOverlay.innerHTML = `
+        <div class="search-nav-controls">
+            <button onclick="navigateSearchResults(-1)" title="Previous result">↑</button>
+            <span class="search-counter">1 / ${searchResults.length}</span>
+            <button onclick="navigateSearchResults(1)" title="Next result">↓</button>
+        </div>
+    `;
+    
+    chatMessages.appendChild(navOverlay);
+}
+
+let currentSearchIndex = 0;
+
+function navigateSearchResults(direction) {
+    if (searchResults.length === 0) return;
+    
+    currentSearchIndex += direction;
+    
+    // Wrap around
+    if (currentSearchIndex < 0) {
+        currentSearchIndex = searchResults.length - 1;
+    } else if (currentSearchIndex >= searchResults.length) {
+        currentSearchIndex = 0;
+    }
+    
+    // Update counter
+    const counter = document.querySelector('.search-counter');
+    if (counter) {
+        counter.textContent = `${currentSearchIndex + 1} / ${searchResults.length}`;
+    }
+    
+    // Scroll to result
+    scrollToSearchResult(currentSearchIndex);
+}
+
+function clearSearch() {
+    const searchInput = document.getElementById('chat-search');
+    if (searchInput) {
+        searchInput.value = '';
+    }
+    
+    clearSearchHighlights();
+    
+    // Remove search navigation
+    const navOverlay = document.querySelector('.search-navigation-overlay');
+    if (navOverlay) navOverlay.remove();
+    
+    // Remove search toasts
+    const searchToasts = document.querySelectorAll('.search-toast');
+    searchToasts.forEach(toast => toast.remove());
+    
+    // Update button states
+    const clearBtn = document.getElementById('clear-search-btn');
+    const searchBtn = document.getElementById('search-btn');
+    
+    if (clearBtn && searchBtn) {
+        clearBtn.classList.add('hidden');
+        searchBtn.classList.remove('hidden');
+    }
+    
+    // Reset search state
+    currentSearchIndex = 0;
+    searchResults = [];
+    
+    console.log('Search cleared');
+}
+
+// Enhanced chat functionality with mobile optimizations
+function setupEnhancedChatFeatures() {
+    console.log('Setting up enhanced chat features...');
+    
+    try {
+        // Add search input handler
+        const searchInput = document.getElementById('chat-search');
+        if (searchInput) {
+            console.log('Setting up search functionality');
+            
+            // Remove existing listeners to prevent duplicates
+            searchInput.removeEventListener('keypress', handleSearchKeypress);
+            searchInput.removeEventListener('input', handleSearchInput);
+            
+            // Add new listeners
+            searchInput.addEventListener('keypress', handleSearchKeypress);
+            searchInput.addEventListener('input', handleSearchInput);
+            
+            // Mobile-specific: Add touch-friendly search behavior
+            if (isMobileDevice()) {
+                searchInput.addEventListener('focus', () => {
+                    // Scroll search input into view on mobile
+                    setTimeout(() => {
+                        searchInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    }, 300);
+                });
+            }
+        } else {
+            console.warn('Search input not found, search functionality disabled');
+        }
+        
+        // Add message input enhancements
+        const messageInput = document.getElementById('message-input');
+        if (messageInput) {
+            console.log('Setting up message input enhancements');
+            
+            // Remove existing listeners
+            messageInput.removeEventListener('input', autoResizeTextarea);
+            messageInput.removeEventListener('keydown', handleKeyboardShortcuts);
+            
+            // Add auto-resize functionality
+            messageInput.addEventListener('input', autoResizeTextarea);
+            
+            // Add keyboard shortcuts (desktop only)
+            if (!isMobileDevice()) {
+                messageInput.addEventListener('keydown', handleKeyboardShortcuts);
+            }
+            
+            // Mobile-specific enhancements
+            if (isMobileDevice()) {
+                // Prevent zoom on focus
+                messageInput.style.fontSize = '16px';
+                
+                // Add mobile-friendly behavior
+                messageInput.addEventListener('focus', () => {
+                    // Scroll message input into view
+                    setTimeout(() => {
+                        messageInput.scrollIntoView({ behavior: 'smooth', block: 'end' });
+                    }, 300);
+                });
+            }
+        } else {
+            console.warn('Message input not found');
+        }
+        
+        // Add long press listeners to existing messages
+        addLongPressToExistingMessages();
+        
+        console.log('Enhanced chat features setup complete');
+        
+    } catch (error) {
+        console.error('Error setting up enhanced chat features:', error);
+    }
+}
+
+// Detect mobile device
+function isMobileDevice() {
+    return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) || 
+           window.innerWidth <= 768 || 
+           ('ontouchstart' in window);
+}
+
+// Search event handlers
+function handleSearchKeypress(e) {
+    if (e.key === 'Enter') {
+        e.preventDefault();
+        performSearch();
+    }
+}
+
+function handleSearchInput(e) {
+    if (e.target.value === '') {
+        clearSearch();
+    }
+}
+
+// Add long press to existing messages
+function addLongPressToExistingMessages() {
+    const messages = document.querySelectorAll('.message[data-message-id]');
+    messages.forEach(messageElement => {
+        const messageId = messageElement.getAttribute('data-message-id');
+        if (messageId && !messageId.startsWith('temp-')) {
+            addLongPressListener(messageElement, messageId);
+        }
+    });
+}
+
+function autoResizeTextarea() {
+    const textarea = document.getElementById('message-input');
+    if (!textarea) return;
+    
+    // Reset height to auto to get the correct scrollHeight
+    textarea.style.height = 'auto';
+    
+    // Set height based on content, with min and max limits
+    const minHeight = 44; // Minimum height in pixels
+    const maxHeight = 120; // Maximum height in pixels
+    const newHeight = Math.min(Math.max(textarea.scrollHeight, minHeight), maxHeight);
+    
+    textarea.style.height = newHeight + 'px';
+    
+    // Enable/disable scrolling based on content
+    if (textarea.scrollHeight > maxHeight) {
+        textarea.style.overflowY = 'auto';
+    } else {
+        textarea.style.overflowY = 'hidden';
+    }
+}
+
+function handleKeyboardShortcuts(e) {
+    // Ctrl/Cmd + Enter to send message
+    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+        e.preventDefault();
+        sendMessage();
+    }
+    
+    // Ctrl/Cmd + K to focus search
+    if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+        e.preventDefault();
+        const searchInput = document.getElementById('chat-search');
+        if (searchInput) {
+            searchInput.focus();
+        }
+    }
+}
+
+// Message reactions functionality (placeholder)
+function addMessageReaction(messageId, reaction) {
+    console.log(`Adding reaction ${reaction} to message ${messageId}`);
+    
+    // This would normally send the reaction to the database
+    // For now, just show a visual indicator
+    const messageElement = document.querySelector(`[data-message-id="${messageId}"]`);
+    if (messageElement) {
+        const reactionsDiv = messageElement.querySelector('.message-reactions');
+        if (reactionsDiv) {
+            const reactionElement = document.createElement('div');
+            reactionElement.className = 'message-reaction reacted';
+            reactionElement.innerHTML = `${reaction} <span>1</span>`;
+            reactionsDiv.appendChild(reactionElement);
+        }
+    }
+}
+
+// Initialize enhanced chat features when chat app is shown
+function showChatApp() {
+    hideAllScreens();
+    chatApp.classList.remove('hidden');
+    
+    // Reset mobile layout
+    if (window.innerWidth <= 768) {
+        const userList = document.getElementById('user-list');
+        const chatArea = document.getElementById('chat-area');
+        userList.classList.remove('mobile-hidden');
+        chatArea.classList.remove('mobile-visible');
+    }
+    
+    loadUsers();
+    setupRealtimeSubscriptions();
+    updateUserPresence(true);
+    startConnectionCheck();
+    startFailedMessageRetry();
+    setupEnhancedChatFeatures(); // Add enhanced features
+    
+    // Add connection status indicator
+    updateConnectionStatus('connected');
 }

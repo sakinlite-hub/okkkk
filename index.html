@@ -111,6 +111,14 @@
                     <h3>Users</h3>
                     <button id="mobile-chat-back" class="mobile-only hidden" onclick="showUserList()">← Back</button>
                 </div>
+                
+                <!-- Search functionality -->
+                <div class="chat-search-container">
+                    <input type="text" id="chat-search" placeholder="Search messages..." class="chat-search-input">
+                    <button id="search-btn" class="search-btn" onclick="performSearch()">🔍</button>
+                    <button id="clear-search-btn" class="search-btn hidden" onclick="clearSearch()">✕</button>
+                </div>
+                
                 <div id="users-container"></div>
             </div>
             
