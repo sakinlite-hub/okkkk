@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SecureChat Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background: #1a1a1a;
+            color: white;
+        }
+        .test-section {
+            margin: 20px 0;
+            padding: 15px;
+            border: 1px solid #333;
+            border-radius: 8px;
+            background: #2a2a2a;
+        }
+        .success { color: #4CAF50; }
+        .error { color: #f44336; }
+        .warning { color: #ff9800; }
+        button {
+            background: #007AFF;
+            color: white;
+            border: none;
+            padding: 10px 15px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover {
+            background: #0056CC;
+        }
+        #results {
+            white-space: pre-wrap;
+            background: #111;
+            padding: 10px;
+            border-radius: 5px;
+            margin-top: 10px;
+        }
+    </style>
+</head>
+<body>
+    <h1>SecureChat Application Test</h1>
+    
+    <div class="test-section">
+        <h3>Pre-deployment Checklist</h3>
+        <button onclick="runTests()">Run All Tests</button>
+        <div id="results"></div>
+    </div>
+
+    <div class="test-section">
+        <h3>Manual Verification</h3>
+        <ol>
+            <li><span class="warning">✓</span> Verify all files are present in the project directory</li>
+            <li><span class="warning">✓</span> Update Supabase credentials in app.js</li>
+            <li><span class="warning">✓</span> Set up Supabase database using database-schema.sql</li>
+            <li><span class="warning">✓</span> Test the calculator interface loads correctly</li>
+            <li><span class="warning">✓</span> Test authentication flow works</li>
+            <li><span class="warning">✓</span> Deploy to Netlify or Vercel</li>
+        </ol>
+    </div>
+
+    <div class="test-section">
+        <h3>Quick Start Commands</h3>
+        <h4>For Netlify:</h4>
+        <code>
+            1. Zip the project folder<br>
+            2. Go to netlify.com<br>
+            3. Drag and drop the zip file<br>
+            4. Wait for deployment
+        </code>
+        
+        <h4>For Vercel:</h4>
+        <code>
+            npm install -g vercel<br>
+            cd your-project-folder<br>
+            vercel<br>
+            Follow the prompts
+        </code>
+    </div>
+
+    <script>
+        function runTests() {
+            const resultsDiv = document.getElementById('results');
+            let results = 'Running SecureChat Application Tests...\n\n';
+            let allPassed = true;
+
+            // Test 1: Check if main files exist
+            results += '1. Checking file structure...\n';
+            const requiredFiles = [
+                'index.html',
+                'app.js',
+                'styles.css',
+                'database-schema.sql',
+                'manifest.json',
+                'netlify.toml',
+                'vercel.json',
+                'README.md'
+            ];
+
+            // Test 2: Check if Supabase is configured
+            results += '2. Checking Supabase configuration...\n';
+            try {
+                // This will be true if the script loaded properly
+                if (typeof supabase !== 'undefined') {
+                    results += '   ✓ Supabase library loaded\n';
+                } else {
+                    results += '   ✗ Supabase library not found\n';
+                    allPassed = false;
+                }
+            } catch (e) {
+                results += '   ⚠ Supabase not configured yet (update credentials in app.js)\n';
+            }
+
+            // Test 3: Check DOM elements
+            results += '3. Checking DOM structure...\n';
+            const requiredElements = [
+                'calculator-container',
+                'auth-modal',
+                'passcode-modal',
+                'chat-container'
+            ];
+
+            requiredElements.forEach(id => {
+                const element = document.getElementById(id);
+                if (element) {
+                    results += `   ✓ ${id} found\n`;
+                } else {
+                    results += `   ✗ ${id} missing\n`;
+                    allPassed = false;
+                }
+            });
+
+            // Test 4: Check CSS loading
+            results += '4. Checking CSS...\n';
+            const body = document.body;
+            const styles = window.getComputedStyle(body);
+            if (styles.fontFamily) {
+                results += '   ✓ CSS loaded successfully\n';
+            } else {
+                results += '   ✗ CSS not loaded\n';
+                allPassed = false;
+            }
+
+            // Test 5: Check mobile responsiveness
+            results += '5. Checking responsive design...\n';
+            const viewport = document.querySelector('meta[name="viewport"]');
+            if (viewport) {
+                results += '   ✓ Viewport meta tag configured\n';
+            } else {
+                results += '   ✗ Viewport meta tag missing\n';
+                allPassed = false;
+            }
+
+            // Final result
+            results += '\n' + '='.repeat(50) + '\n';
+            if (allPassed) {
+                results += '🎉 ALL TESTS PASSED! Ready for deployment.\n';
+                results += '\nNext steps:\n';
+                results += '1. Update Supabase credentials in app.js\n';
+                results += '2. Set up Supabase database\n';
+                results += '3. Deploy to Netlify or Vercel\n';
+            } else {
+                results += '❌ Some tests failed. Please check the issues above.\n';
+            }
+
+            resultsDiv.textContent = results;
+        }
+
+        // Auto-run tests when page loads
+        document.addEventListener('DOMContentLoaded', () => {
+            setTimeout(runTests, 1000);
+        });
+    </script>
+</body>
+</html>

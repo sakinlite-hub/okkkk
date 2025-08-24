@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Calculator</title>
+    <link rel="stylesheet" href="styles.css">
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#1a1a1a">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+</head>
+<body>
+    <!-- Loading Screen -->
+    <div id="loading-screen" class="loading-screen">
+        <div class="loading-spinner"></div>
+        <p>Loading...</p>
+    </div>
+
+    <!-- Calculator Interface (Lock Screen) -->
+    <div id="calculator-container" class="calculator-container">
+        <div class="calculator">
+            <div class="calculator-header">
+                <div class="status-bar">
+                    <span class="time" id="current-time"></span>
+                    <span class="battery">100%</span>
+                </div>
+            </div>
+            <div class="display">
+                <div class="display-text" id="display">0</div>
+            </div>
+            <div class="buttons">
+                <button class="btn btn-function" onclick="clearDisplay()">AC</button>
+                <button class="btn btn-function" onclick="toggleSign()">+/-</button>
+                <button class="btn btn-function" onclick="percentage()">%</button>
+                <button class="btn btn-operator" onclick="setOperation('/')">÷</button>
+                
+                <button class="btn btn-number" onclick="appendNumber('7')">7</button>
+                <button class="btn btn-number" onclick="appendNumber('8')">8</button>
+                <button class="btn btn-number" onclick="appendNumber('9')">9</button>
+                <button class="btn btn-operator" onclick="setOperation('*')">×</button>
+                
+                <button class="btn btn-number" onclick="appendNumber('4')">4</button>
+                <button class="btn btn-number" onclick="appendNumber('5')">5</button>
+                <button class="btn btn-number" onclick="appendNumber('6')">6</button>
+                <button class="btn btn-operator" onclick="setOperation('-')">-</button>
+                
+                <button class="btn btn-number" onclick="appendNumber('1')">1</button>
+                <button class="btn btn-number" onclick="appendNumber('2')">2</button>
+                <button class="btn btn-number" onclick="appendNumber('3')">3</button>
+                <button class="btn btn-operator" onclick="setOperation('+')">+</button>
+                
+                <button class="btn btn-number btn-zero" onclick="appendNumber('0')">0</button>
+                <button class="btn btn-number" onclick="appendNumber('.')">.</button>
+                <button class="btn btn-equals" onclick="calculate()" id="equals-btn">=</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Authentication Modal -->
+    <div id="auth-modal" class="modal hidden">
+        <div class="modal-content">
+            <h2 id="auth-title">Welcome</h2>
+            <form id="auth-form">
+                <div class="form-group">
+                    <input type="email" id="email" placeholder="Email" required>
+                </div>
+                <div class="form-group">
+                    <input type="password" id="password" placeholder="Password" required>
+                </div>
+                <div class="form-group" id="username-group" style="display: none;">
+                    <input type="text" id="username" placeholder="Username">
+                </div>
+                <button type="submit" id="auth-submit">Sign In</button>
+                <p class="auth-switch">
+                    <span id="auth-switch-text">Don't have an account?</span>
+                    <a href="#" id="auth-switch-link">Sign Up</a>
+                </p>
+            </form>
+            <div id="auth-error" class="error-message"></div>
+        </div>
+    </div>
+
+    <!-- Passcode Setup Modal -->
+    <div id="passcode-modal" class="modal hidden">
+        <div class="modal-content">
+            <h2>Set Your Secret Passcode</h2>
+            <p>Choose a numeric passcode to access your chat. This will be your secret entry code on the calculator.</p>
+            <div class="form-group">
+                <input type="password" id="new-passcode" placeholder="Enter 4-8 digit passcode" maxlength="8" pattern="[0-9]*" required>
+            </div>
+            <div class="form-group">
+                <input type="password" id="confirm-passcode" placeholder="Confirm passcode" maxlength="8" pattern="[0-9]*" required>
+            </div>
+            <button id="save-passcode" class="btn-primary">Save Passcode</button>
+            <div id="passcode-error" class="error-message"></div>
+        </div>
+    </div>
+
+    <!-- Chat Interface -->
+    <div id="chat-container" class="chat-container hidden">
+        <!-- Mobile Header -->
+        <div class="mobile-header">
+            <button class="back-btn" id="back-to-users">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+                    <path d="M15 18L9 12L15 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+            </button>
+            <div class="chat-user-info">
+                <div class="chat-avatar">
+                    <img id="chat-user-avatar" src="" alt="">
+                    <div class="status-indicator" id="chat-user-status"></div>
+                </div>
+                <div class="chat-user-details">
+                    <h3 id="chat-user-name"></h3>
+                    <span id="chat-user-presence"></span>
+                </div>
+            </div>
+            <button class="menu-btn" id="chat-menu">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+                    <circle cx="12" cy="12" r="1" fill="currentColor"/>
+                    <circle cx="19" cy="12" r="1" fill="currentColor"/>
+                    <circle cx="5" cy="12" r="1" fill="currentColor"/>
+                </svg>
+            </button>
+        </div>
+
+        <div class="chat-layout">
+            <!-- User List Sidebar -->
+            <div class="user-list-container" id="user-list-container">
+                <div class="user-list-header">
+                    <h2>Messages</h2>
+                    <div class="header-actions">
+                        <button class="search-btn" id="search-toggle">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+                                <circle cx="11" cy="11" r="8" stroke="currentColor" stroke-width="2"/>
+                                <path d="M21 21L16.65 16.65" stroke="currentColor" stroke-width="2"/>
+                            </svg>
+                        </button>
+                        <button class="logout-btn" id="logout-btn">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+                                <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" stroke="currentColor" stroke-width="2"/>
+                                <polyline points="16,17 21,12 16,7" stroke="currentColor" stroke-width="2"/>
+                                <line x1="21" y1="12" x2="9" y2="12" stroke="currentColor" stroke-width="2"/>
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+                
+                <div class="search-container hidden" id="search-container">
+                    <input type="text" id="user-search" placeholder="Search users...">
+                </div>
+
+                <div class="user-list" id="user-list">
+                    <!-- Users will be dynamically loaded here -->
+                </div>
+            </div>
+
+            <!-- Chat Area -->
+            <div class="chat-area" id="chat-area">
+                <div class="welcome-screen">
+                    <div class="welcome-content">
+                        <div class="welcome-icon">💬</div>
+                        <h3>Welcome to SecureChat</h3>
+                        <p>Select a user to start chatting</p>
+                    </div>
+                </div>
+
+                <div class="chat-messages" id="chat-messages">
+                    <!-- Messages will be dynamically loaded here -->
+                </div>
+
+                <div class="message-input-container" id="message-input-container">
+                    <div class="message-input">
+                        <button class="attach-btn" id="attach-btn">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+                                <path d="M21.44 11.05L12.25 20.24a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66L9.42 17.41a2 2 0 0 1-2.83-2.83l8.48-8.48" stroke="currentColor" stroke-width="2"/>
+                            </svg>
+                        </button>
+                        <input type="text" id="message-text" placeholder="Type a message..." maxlength="1000">
+                        <button class="send-btn" id="send-btn">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+                                <line x1="22" y1="2" x2="11" y2="13" stroke="currentColor" stroke-width="2"/>
+                                <polygon points="22,2 15,22 11,13 2,9 22,2" stroke="currentColor" stroke-width="2"/>
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- TikTok URL Modal -->
+    <div id="tiktok-modal" class="modal hidden">
+        <div class="modal-content">
+            <h3>Share TikTok Video</h3>
+            <div class="form-group">
+                <input type="url" id="tiktok-url" placeholder="Paste TikTok URL here...">
+            </div>
+            <div class="modal-actions">
+                <button id="cancel-tiktok" class="btn-secondary">Cancel</button>
+                <button id="send-tiktok" class="btn-primary">Send</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="app.js"></script>
+</body>
+</html>

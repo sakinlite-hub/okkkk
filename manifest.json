@@ -1,0 +1,19 @@
+{
+    "name": "SecureChat - Calculator",
+    "short_name": "Calculator",
+    "description": "A secure chat application disguised as a calculator",
+    "start_url": "/",
+    "display": "standalone",
+    "background_color": "#1a1a1a",
+    "theme_color": "#1a1a1a",
+    "orientation": "portrait",
+    "icons": [
+        {
+            "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'><rect width='512' height='512' fill='%23007AFF' rx='115.2' ry='115.2'/><rect x='128' y='128' width='256' height='256' fill='%23fff' rx='25.6' ry='25.6'/><path d='M192 192h32v32h-32zm48 0h32v32h-32zm48 0h32v32h-32zM192 240h32v32h-32zm48 0h32v32h-32zm48 0h32v32h-32zM192 288h32v32h-32zm48 0h32v32h-32zm48 0h32v32h-32z' fill='%23007AFF'/></svg>",
+            "sizes": "512x512",
+            "type": "image/svg+xml"
+        }
+    ],
+    "categories": ["productivity", "utilities"],
+    "lang": "en-US"
+}
