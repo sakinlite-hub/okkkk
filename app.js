@@ -626,6 +626,11 @@ async function loadMessages(partnerId) {
         
         displayMessages(messages);
         
+        // Update last message check time to prevent duplicates in polling
+        if (messages && messages.length > 0) {
+            lastMessageCheck = messages[messages.length - 1].timestamp;
+        }
+        
     } catch (error) {
         console.error('Load messages error:', error);
     }
@@ -637,17 +642,22 @@ function displayMessages(messages) {
     
     messages.forEach(message => {
         const messageElement = createMessageElement(message);
+        messageElement.setAttribute('data-message-id', message.id);
         container.appendChild(messageElement);
     });
     
     // Scroll to bottom
     container.scrollTop = container.scrollHeight;
+    
+    // Force reflow to ensure messages stay visible
+    container.offsetHeight;
 }
 
 function createMessageElement(message) {
     const messageDiv = document.createElement('div');
     const isSent = message.sender_id === currentUser.id;
     messageDiv.className = `message ${isSent ? 'sent' : 'received'}`;
+    messageDiv.setAttribute('data-message-id', message.id);
     
     let content = '';
     if (message.type === 'tiktok') {
@@ -737,13 +747,16 @@ async function sendMessage() {
         
         messageInput.value = '';
         
-        // On mobile, immediately add the message to UI (don't wait for real-time)
-        if (window.innerWidth <= 768 && data) {
+        // Add the message to UI immediately for both mobile and desktop
+        if (data) {
             const messageElement = createMessageElement(data);
             const chatMessages = document.getElementById('chat-messages');
             if (chatMessages) {
                 chatMessages.appendChild(messageElement);
                 chatMessages.scrollTop = chatMessages.scrollHeight;
+                
+                // Force reflow to ensure message stays visible
+                chatMessages.offsetHeight;
             }
         }
         
@@ -812,15 +825,18 @@ function setupRealtimeSubscriptions() {
                         ((message.sender_id === currentUser.id && message.receiver_id === currentChatPartner.id) ||
                          (message.sender_id === currentChatPartner.id && message.receiver_id === currentUser.id))) {
                         
-                        // Add message to chat immediately
-                        const messageElement = createMessageElement(message);
+                        // Check if message already exists to prevent duplicates
                         const chatMessages = document.getElementById('chat-messages');
                         if (chatMessages) {
-                            chatMessages.appendChild(messageElement);
-                            chatMessages.scrollTop = chatMessages.scrollHeight;
-                            
-                            // Force a visual update for mobile
-                            if (window.innerWidth <= 768) {
+                            const existingMessage = chatMessages.querySelector(`[data-message-id="${message.id}"]`);
+                            if (!existingMessage) {
+                                // Add message to chat immediately
+                                const messageElement = createMessageElement(message);
+                                messageElement.setAttribute('data-message-id', message.id);
+                                chatMessages.appendChild(messageElement);
+                                chatMessages.scrollTop = chatMessages.scrollHeight;
+                                
+                                // Force a visual update
                                 setTimeout(() => {
                                     chatMessages.scrollTop = chatMessages.scrollHeight;
                                 }, 100);
@@ -876,9 +892,14 @@ function setupMobilePollingFallback() {
                 
                 const chatMessages = document.getElementById('chat-messages');
                 newMessages.forEach(message => {
-                    const messageElement = createMessageElement(message);
-                    if (chatMessages) {
-                        chatMessages.appendChild(messageElement);
+                    // Check if message already exists to prevent duplicates
+                    const existingMessage = chatMessages.querySelector(`[data-message-id="${message.id}"]`);
+                    if (!existingMessage) {
+                        const messageElement = createMessageElement(message);
+                        messageElement.setAttribute('data-message-id', message.id);
+                        if (chatMessages) {
+                            chatMessages.appendChild(messageElement);
+                        }
                     }
                 });
                 
@@ -886,13 +907,16 @@ function setupMobilePollingFallback() {
                     chatMessages.scrollTop = chatMessages.scrollHeight;
                 }
                 
-                // Update last check time
-                lastMessageCheck = newMessages[newMessages.length - 1].timestamp;
+                // Update last check time to the latest message timestamp
+                const latestMessage = newMessages[newMessages.length - 1];
+                if (latestMessage && latestMessage.timestamp) {
+                    lastMessageCheck = latestMessage.timestamp;
+                }
             }
         } catch (error) {
             console.error('Mobile polling error:', error);
         }
-    }, 3000); // Check every 3 seconds
+    }, 5000); // Check every 5 seconds (increased from 3 seconds)
 }
 
 function stopMobilePolling() {
